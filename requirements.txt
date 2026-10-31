@@ -1,2 +1,5 @@
 streamlit>=1.28.0
 jsbeautifier>=1.14.11
+esprima>=4.0.1
+pytest>=7.0.0
+
