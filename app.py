@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M7)
+# External Engine Imports (M2 - M8)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -15,6 +15,7 @@ from encoding_engine import EncodingAnalyzer
 from detection_engine import DetectionEngine
 from cfg_engine import CFGAnalyzer
 from dce_engine import DCEAnalyzer
+from rename_engine import RenameAnalyzer
 
 # ==========================================
 # M1 Engine Components (Regex & Formatting)
@@ -23,7 +24,9 @@ class CodeAnalyzer:
     """Handles static RegExp analysis (Milestone 1)."""
     @staticmethod
     def analyze(code: str) -> Dict[str, Any]:
-        if not code or not code.strip(): return {"error": "Empty input"}
+        if not code or not code.strip(): 
+            return {"error": "Empty input"}
+        
         hex_literals = re.findall(r'\b0x[0-9a-fA-F]+\b', code, re.IGNORECASE)
         escaped_strings = re.findall(r'\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}', code, re.IGNORECASE)
         long_strings = re.findall(r'["\']([a-zA-Z0-9+/=]{100,})["\']', code)
@@ -42,7 +45,8 @@ class DeobfuscatorEngine:
     """Handles basic formatting safely (Milestone 1)."""
     @staticmethod
     def process(code: str) -> Tuple[str, str]:
-        if not code or not code.strip(): raise ValueError("No JavaScript code provided.")
+        if not code or not code.strip(): 
+            raise ValueError("No JavaScript code provided.")
         try:
             opts = jsbeautifier.default_options()
             opts.indent_size = 4
@@ -61,21 +65,31 @@ class DeobfuscatorEngine:
 # UI Configuration & State Management
 # ==========================================
 def initialize_state():
-    # Base IO
-    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original']:
+    # Base IO & M8 Baseline State
+    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base']:
         if key not in st.session_state: 
             st.session_state[key] = 0 if key == 'uploader_key' else ""
             
     # Engine Results
-    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements']:
+    engine_keys = [
+        'm1_results', 'm2_results', 'm3_results', 'm4_results', 
+        'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results'
+    ]
+    for key in engine_keys:
         if key not in st.session_state: 
             st.session_state[key] = None
 
 def reset_app():
-    for key in ['input_code', 'processed_code', 'm6_original']: 
+    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base']: 
         st.session_state[key] = ""
-    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements']: 
+    
+    engine_keys = [
+        'm1_results', 'm2_results', 'm3_results', 'm4_results', 
+        'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results'
+    ]
+    for key in engine_keys: 
         st.session_state[key] = None
+        
     st.session_state.uploader_key += 1
 
 # ==========================================
@@ -106,8 +120,8 @@ def main():
         st.header("Actions & Settings")
         uploaded_file = st.file_uploader("Upload Target JS (.js)", type=["js", "txt"], key=f"uploader_{st.session_state.uploader_key}")
         if uploaded_file is not None:
-            stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace"))
-            st.session_state.input_code = stringio.read()
+            # Read safely as text
+            st.session_state.input_code = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace")).read()
             
         st.markdown("---")
         st.markdown("#### Engine Settings")
@@ -123,9 +137,9 @@ def main():
 
     # UI Tabs
     tabs = st.tabs([
-        "🚀 M1: Main Pipeline", "🌳 M2: AST", "🧶 M3: Strings", 
+        "🚀 Main", "🌳 M2: AST", "🧶 M3: Strings", 
         "🧮 M4: Encodings", "🚨 M5: Obfuscator", "⚖️ M5: Compare", 
-        "🔀 M6: CFG", "🪦 M7: Dead Code"
+        "🔀 M6: CFG", "🪦 M7: Dead Code", "🏷️ M8: Renaming"
     ])
 
     # ---------------------------
@@ -138,7 +152,7 @@ def main():
             user_input = st.text_area("Paste obfuscated code here:", value=st.session_state.input_code, height=350)
             
             if st.button("🚀 Execute Full Analysis Pipeline", type="primary", use_container_width=True):
-                if not user_input.strip():
+                if not user_input.strip(): 
                     st.error("Please provide JavaScript code.")
                 else:
                     with st.spinner("Executing Complete Multi-Layer Static Pipeline..."):
@@ -176,6 +190,12 @@ def main():
                         # Apply destructive optimizations only if user opted-in
                         if apply_dce and st.session_state.m7_results.get("status") == "success":
                             transformed_code = dce_engine.transform()
+                            
+                        # M8: Identifier Analysis
+                        # Save the transformed code base at this step so Tab 9 can apply renames directly to it
+                        st.session_state.m8_code_base = transformed_code
+                        rename_engine = RenameAnalyzer()
+                        st.session_state.m8_results = rename_engine.analyze(transformed_code)
                             
                         # Final M1 formatting
                         processed, status = DeobfuscatorEngine().process(transformed_code)
@@ -395,6 +415,7 @@ def main():
                     else:
                         st.error(f"🚨 CFF Detected! State Machine actively dispatching via `{', '.join(cff['state_variables'])}`")
                         if cff["transitions"]:
+                            st.write("Identified State Transitions:")
                             st.dataframe(pd.DataFrame(cff["transitions"]), use_container_width=True)
 
                 with col_diff:
@@ -450,6 +471,93 @@ def main():
                         st.dataframe(df_reps, use_container_width=True)
                         
                 st.download_button("📄 Download M7 Dead Code Report (JSON)", json.dumps(m7, indent=4), "dead_code_report.json", "application/json")
+
+    # ---------------------------
+    # TAB 9 (M8): Identifier Renaming Dashboard
+    # ---------------------------
+    with tabs[8]:
+        st.subheader("🏷️ Intelligent Identifier Renaming & Scope Explorer")
+        if not st.session_state.m8_results:
+            st.info("Execute the pipeline in Tab 1 to generate Scope & Identifier Analytics.")
+        else:
+            m8 = st.session_state.m8_results
+            if m8.get("status") == "error":
+                st.error(m8["message"])
+            else:
+                stats = m8["stats"]
+                sc1, sc2, sc3 = st.columns(3)
+                sc1.metric("Total Identifiers Mapped", stats["total_identifiers"])
+                sc2.metric("Suspicious/Obfuscated", stats["suspicious_identifiers"])
+                sc3.metric("Functions / Variables", f"{stats['functions']} / {stats['variables']}")
+                
+                st.markdown("---")
+                st.markdown("#### 🔬 Scope Explorer & Renaming Sandbox")
+                st.write("Review auto-generated semantic names for suspicious identifiers. Check the `Apply` box to queue them for transformation.")
+                
+                if not m8["identifiers"]:
+                    st.success("No user-defined variables or functions found in this code.")
+                else:
+                    # Prepare Interactive DataFrame
+                    df_data = []
+                    for i in m8["identifiers"]:
+                        df_data.append({
+                            "Apply": i["is_suspicious"],
+                            "Original Name": i["original_name"],
+                            "Suggestion": i["suggestion"],
+                            "Scope": i["scope_type"].capitalize(),
+                            "Type": i["kind"].capitalize(),
+                            "Usages": len(i["ref_ranges"]),
+                            "Suspicious": i["is_suspicious"],
+                            "_id": i["id"],
+                            "_decl": i["decl_range"],
+                            "_refs": i["ref_ranges"]
+                        })
+                    
+                    df = pd.DataFrame(df_data)
+                    
+                    # Make columns editable using Streamlit Data Editor
+                    edited_df = st.data_editor(
+                        df,
+                        column_config={
+                            "Apply": st.column_config.CheckboxColumn("Apply Change", default=False),
+                            "Suggestion": st.column_config.TextColumn("Proposed Name", required=True),
+                            "_id": None, "_decl": None, "_refs": None # Hide metadata
+                        },
+                        disabled=["Original Name", "Scope", "Type", "Usages", "Suspicious"],
+                        use_container_width=True,
+                        num_rows="fixed"
+                    )
+                    
+                    if st.button("✨ Apply Selected Renaming", type="primary"):
+                        # Filter rows where Apply is True and name actually changed
+                        approved_rows = edited_df[(edited_df["Apply"] == True) & (edited_df["Original Name"] != edited_df["Suggestion"])]
+                        
+                        if approved_rows.empty:
+                            st.warning("No modified names selected to apply.")
+                        else:
+                            approved_payload = []
+                            for _, row in approved_rows.iterrows():
+                                approved_payload.append({
+                                    "original_name": row["Original Name"],
+                                    "suggestion": row["Suggestion"],
+                                    "decl_range": row["_decl"],
+                                    "ref_ranges": row["_refs"]
+                                })
+                            
+                            # Execute safe AST replacement on the M8 base code
+                            rename_engine = RenameAnalyzer()
+                            new_code = rename_engine.transform(st.session_state.m8_code_base, approved_payload)
+                            
+                            # Re-run beautifier
+                            processed, status = DeobfuscatorEngine().process(new_code)
+                            if status == "Success":
+                                st.session_state.processed_code = processed
+                                st.session_state.m8_code_base = new_code
+                                st.success(f"Successfully renamed {len(approved_payload)} identifiers. View Output in Tab 1.")
+                            else:
+                                st.error("Error formatting renamed code.")
+
+                st.download_button("📄 Download M8 Identifier Report (JSON)", json.dumps(m8, indent=4), "identifier_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
