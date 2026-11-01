@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M8)
+# External Engine Imports (M2 - M9)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -16,6 +16,7 @@ from detection_engine import DetectionEngine
 from cfg_engine import CFGAnalyzer
 from dce_engine import DCEAnalyzer
 from rename_engine import RenameAnalyzer
+from array_engine import ArrayAnalyzer
 
 # ==========================================
 # M1 Engine Components (Regex & Formatting)
@@ -65,27 +66,29 @@ class DeobfuscatorEngine:
 # UI Configuration & State Management
 # ==========================================
 def initialize_state():
-    # Base IO & M8 Baseline State
-    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base']:
+    # Base IO & Interactive Engine States
+    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base']:
         if key not in st.session_state: 
             st.session_state[key] = 0 if key == 'uploader_key' else ""
             
     # Engine Results
     engine_keys = [
         'm1_results', 'm2_results', 'm3_results', 'm4_results', 
-        'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results'
+        'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 
+        'm8_results', 'm9_results'
     ]
     for key in engine_keys:
         if key not in st.session_state: 
             st.session_state[key] = None
 
 def reset_app():
-    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base']: 
+    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base']: 
         st.session_state[key] = ""
     
     engine_keys = [
         'm1_results', 'm2_results', 'm3_results', 'm4_results', 
-        'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results'
+        'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 
+        'm8_results', 'm9_results'
     ]
     for key in engine_keys: 
         st.session_state[key] = None
@@ -139,7 +142,7 @@ def main():
     tabs = st.tabs([
         "🚀 Main", "🌳 M2: AST", "🧶 M3: Strings", 
         "🧮 M4: Encodings", "🚨 M5: Obfuscator", "⚖️ M5: Compare", 
-        "🔀 M6: CFG", "🪦 M7: Dead Code", "🏷️ M8: Renaming"
+        "🔀 M6: CFG", "🪦 M7: Dead Code", "🏷️ M8: Renaming", "📦 M9: Arrays"
     ])
 
     # ---------------------------
@@ -192,10 +195,14 @@ def main():
                             transformed_code = dce_engine.transform()
                             
                         # M8: Identifier Analysis
-                        # Save the transformed code base at this step so Tab 9 can apply renames directly to it
                         st.session_state.m8_code_base = transformed_code
                         rename_engine = RenameAnalyzer()
                         st.session_state.m8_results = rename_engine.analyze(transformed_code)
+                        
+                        # M9: String Array Engine
+                        st.session_state.m9_code_base = transformed_code
+                        array_engine = ArrayAnalyzer()
+                        st.session_state.m9_results = array_engine.analyze(transformed_code)
                             
                         # Final M1 formatting
                         processed, status = DeobfuscatorEngine().process(transformed_code)
@@ -277,10 +284,6 @@ def main():
                 if m3["concatenations"]:
                     st.markdown("#### 🔗 Folded Static Concatenations")
                     st.dataframe(pd.DataFrame([{"Original": c["raw_expression"], "Folded": c["result"]} for c in m3["concatenations"]]), use_container_width=True)
-
-                if m3["arrays"]:
-                    st.markdown("#### 📚 Discovered String Arrays (Lookup Tables)")
-                    st.dataframe(pd.DataFrame([{"Size": a["size"], "Preview": str(a["preview"]), "Raw": a["raw"]} for a in m3["arrays"]]), use_container_width=True)
 
     # ---------------------------
     # TAB 4: Multi-Layer Encoding
@@ -473,7 +476,7 @@ def main():
                 st.download_button("📄 Download M7 Dead Code Report (JSON)", json.dumps(m7, indent=4), "dead_code_report.json", "application/json")
 
     # ---------------------------
-    # TAB 9 (M8): Identifier Renaming Dashboard
+    # TAB 9: Identifier Renaming
     # ---------------------------
     with tabs[8]:
         st.subheader("🏷️ Intelligent Identifier Renaming & Scope Explorer")
@@ -497,7 +500,6 @@ def main():
                 if not m8["identifiers"]:
                     st.success("No user-defined variables or functions found in this code.")
                 else:
-                    # Prepare Interactive DataFrame
                     df_data = []
                     for i in m8["identifiers"]:
                         df_data.append({
@@ -515,7 +517,6 @@ def main():
                     
                     df = pd.DataFrame(df_data)
                     
-                    # Make columns editable using Streamlit Data Editor
                     edited_df = st.data_editor(
                         df,
                         column_config={
@@ -529,7 +530,6 @@ def main():
                     )
                     
                     if st.button("✨ Apply Selected Renaming", type="primary"):
-                        # Filter rows where Apply is True and name actually changed
                         approved_rows = edited_df[(edited_df["Apply"] == True) & (edited_df["Original Name"] != edited_df["Suggestion"])]
                         
                         if approved_rows.empty:
@@ -544,11 +544,9 @@ def main():
                                     "ref_ranges": row["_refs"]
                                 })
                             
-                            # Execute safe AST replacement on the M8 base code
                             rename_engine = RenameAnalyzer()
                             new_code = rename_engine.transform(st.session_state.m8_code_base, approved_payload)
                             
-                            # Re-run beautifier
                             processed, status = DeobfuscatorEngine().process(new_code)
                             if status == "Success":
                                 st.session_state.processed_code = processed
@@ -558,6 +556,104 @@ def main():
                                 st.error("Error formatting renamed code.")
 
                 st.download_button("📄 Download M8 Identifier Report (JSON)", json.dumps(m8, indent=4), "identifier_report.json", "application/json")
+
+    # ---------------------------
+    # TAB 10: String Array Explorer
+    # ---------------------------
+    with tabs[9]:
+        st.subheader("📦 Advanced String Array Explorer & Reconstruction")
+        if not st.session_state.m9_results:
+            st.info("Execute the pipeline in Tab 1 to generate String Array Analytics.")
+        else:
+            m9 = st.session_state.m9_results
+            if m9.get("status") == "error":
+                st.error(m9["message"])
+            else:
+                stats = m9["stats"]
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric("String Arrays", stats["total_arrays"])
+                sc2.metric("Total Entries", stats["total_entries"])
+                sc3.metric("Resolved Lookups", stats["resolved_lookups"])
+                sc4.metric("Rotations Detected", stats["rotation_patterns"])
+                
+                st.markdown("---")
+                
+                c_arr, c_acc = st.columns(2)
+                with c_arr:
+                    st.markdown("#### 📚 Centralized Lookup Tables")
+                    if not m9["arrays"]:
+                        st.success("No large string arrays detected.")
+                    else:
+                        for name, data in m9["arrays"].items():
+                            with st.expander(f"Array: `{name}` (Size: {len(data['elements'])}) {'⚠️ Rotated' if data['is_rotated'] else ''}"):
+                                st.write(f"**Rotated dynamically?** {data['is_rotated']}")
+                                st.json(data["elements"][:50]) # preview first 50
+                with c_acc:
+                    st.markdown("#### ⚙️ Array Accessor Functions")
+                    if not m9["accessors"]:
+                        st.info("No static function accessors mapped.")
+                    else:
+                        acc_data = [{"Function": f, "Targets Array": d["array_name"]} for f, d in m9["accessors"].items()]
+                        st.dataframe(pd.DataFrame(acc_data), use_container_width=True)
+
+                st.markdown("---")
+                st.markdown("#### ✨ Static Lookup Reconstruction Sandbox")
+                st.write("Review safely resolved expressions. Expressions targeting rotated arrays are marked `Low Confidence`.")
+                
+                if not m9["lookups"]:
+                    st.info("No statically resolvable lookups found.")
+                else:
+                    df_data = []
+                    for l in m9["lookups"]:
+                        # Auto-apply High confidence only
+                        apply_def = "High" in l["confidence"]
+                        df_data.append({
+                            "Apply": apply_def,
+                            "Original Expression": l["original_expression"],
+                            "Resolved String": l["resolved_value"],
+                            "Confidence": l["confidence"],
+                            "Target Array": l["array"],
+                            "Index": l["index"],
+                            "_range": l["range"]
+                        })
+                        
+                    df = pd.DataFrame(df_data)
+                    
+                    edited_df = st.data_editor(
+                        df,
+                        column_config={
+                            "Apply": st.column_config.CheckboxColumn("Apply Change"),
+                            "_range": None # Hide metadata
+                        },
+                        disabled=["Original Expression", "Resolved String", "Confidence", "Target Array", "Index"],
+                        use_container_width=True
+                    )
+                    
+                    if st.button("🚀 Apply Reconstructions", type="primary"):
+                        approved = edited_df[edited_df["Apply"] == True]
+                        if approved.empty:
+                            st.warning("No reconstructions selected.")
+                        else:
+                            payload = []
+                            for _, row in approved.iterrows():
+                                payload.append({
+                                    "apply": True,
+                                    "resolved_value": row["Resolved String"],
+                                    "range": row["_range"]
+                                })
+                                
+                            engine = ArrayAnalyzer()
+                            new_code = engine.transform(st.session_state.m9_code_base, payload)
+                            
+                            processed, status = DeobfuscatorEngine().process(new_code)
+                            if status == "Success":
+                                st.session_state.processed_code = processed
+                                st.session_state.m9_code_base = new_code
+                                st.success(f"Successfully reconstructed {len(payload)} lookup expressions. View Output in Tab 1.")
+                            else:
+                                st.error("Error formatting code.")
+
+                st.download_button("📄 Download M9 Array Report (JSON)", json.dumps(m9, indent=4), "array_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
