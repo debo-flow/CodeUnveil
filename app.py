@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M11)
+# External Engine Imports (M2 - M12)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -19,9 +19,10 @@ from rename_engine import RenameAnalyzer
 from array_engine import ArrayAnalyzer
 from function_engine import FunctionAnalyzer
 from expr_engine import ExprAnalyzer
+from reconstruct_engine import ASTGenerator, CodeQualityAnalyzer, ReconstructionPipeline
 
 # ==========================================
-# M1 Engine Components (Regex & Formatting)
+# M1 Engine Components
 # ==========================================
 class CodeAnalyzer:
     @staticmethod
@@ -50,14 +51,14 @@ class DeobfuscatorEngine:
 # UI Configuration & State Management
 # ==========================================
 def initialize_state():
-    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base']:
+    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm12_original_stats']:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
-    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results', 'm11_results']:
+    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results', 'm11_results', 'm12_results']:
         if key not in st.session_state: st.session_state[key] = None
 
 def reset_app():
-    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base']: st.session_state[key] = ""
-    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results', 'm11_results']: st.session_state[key] = None
+    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm12_original_stats']: st.session_state[key] = ""
+    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results', 'm11_results', 'm12_results']: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
 def main():
@@ -74,7 +75,9 @@ def main():
         if uploaded_file is not None:
             st.session_state.input_code = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace")).read()
             
-        apply_dce = st.checkbox("🗑️ Enable Destructive Dead Code Elimination (M7)", value=False)
+        st.markdown("#### Configurable Pipeline (M12)")
+        apply_dce = st.checkbox("🗑️ Run Destructive Dead Code Removal (M7)", value=False)
+        apply_ast_regen = st.checkbox("🏗️ Enable Strict AST Regeneration (M12)", value=True, help="Rebuilds code purely from AST nodes, removing all formatting artifacts.")
         
         if st.button("🔄 Reset / Clear All", use_container_width=True):
             reset_app()
@@ -82,7 +85,7 @@ def main():
 
     tabs = st.tabs([
         "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6", 
-        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11: Expr"
+        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12: Recon"
     ])
 
     # ---------------------------
@@ -94,14 +97,18 @@ def main():
             st.subheader("Input Original JavaScript")
             user_input = st.text_area("Paste obfuscated code here:", value=st.session_state.input_code, height=350)
             
-            if st.button("🚀 Execute Full Analysis Pipeline", type="primary", use_container_width=True):
+            if st.button("🚀 Execute Multi-Stage Reconstruction Pipeline", type="primary", use_container_width=True):
                 if not user_input.strip(): st.error("Please provide JavaScript code.")
                 else:
-                    with st.spinner("Executing Complete Static Pipeline..."):
+                    with st.spinner("Executing Configurable Multi-Stage Pipeline..."):
+                        # M12 Stats Before
+                        st.session_state.m12_original_stats = CodeQualityAnalyzer.analyze(user_input)
+                        
                         st.session_state.m6_original = user_input
                         st.session_state.m1_results = CodeAnalyzer().analyze(user_input)
                         st.session_state.m2_results = ASTAnalyzer().analyze(user_input)
                         
+                        # Apply String & Regex Encodings
                         string_engine = StringAnalyzer()
                         st.session_state.m3_results = string_engine.analyze(user_input)
                         transformed_code = string_engine.transform() if st.session_state.m3_results.get("status") == "success" else user_input
@@ -131,23 +138,33 @@ def main():
                         st.session_state.m10_code_base = transformed_code
                         st.session_state.m10_results = FunctionAnalyzer().analyze(transformed_code)
                         
-                        # M11 Expression Engine
                         st.session_state.m11_code_base = transformed_code
-                        expr_engine = ExprAnalyzer()
-                        st.session_state.m11_results = expr_engine.analyze(transformed_code)
+                        st.session_state.m11_results = ExprAnalyzer().analyze(transformed_code)
                             
+                        # M12 Pipeline Selection
+                        if apply_ast_regen:
+                            success, ast_code, msg = ReconstructionPipeline.rebuild_ast_source(transformed_code)
+                            if success: 
+                                transformed_code = ast_code
+                            else:
+                                st.warning(msg)
+                                
+                        # Final pass beautifier & stats
                         processed, status = DeobfuscatorEngine().process(transformed_code)
-                        if status == "Success": st.session_state.processed_code = processed
-                        else: st.error(status)
+                        if status == "Success": 
+                            st.session_state.processed_code = processed
+                            st.session_state.m12_results = CodeQualityAnalyzer.analyze(processed)
+                        else: 
+                            st.error(status)
 
         with col2:
-            st.subheader("Output Deobfuscated Code")
+            st.subheader("Output Reconstructed Code")
             st.text_area("Normalized result:", value=st.session_state.processed_code, height=350, disabled=True)
             if st.session_state.processed_code:
-                st.download_button("💾 Download Processed Code", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
+                st.download_button("💾 Download Reconstructed JS", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
 
     # ---------------------------
-    # TABS 1-10 Preserved UI Views
+    # TABS 1-11 Preserved Views
     # ---------------------------
     with tabs[1]:
         if st.session_state.m2_results: st.json(st.session_state.m2_results.get("ast_tree", {}), expanded=False)
@@ -170,72 +187,45 @@ def main():
         if st.session_state.m9_results and st.session_state.m9_results.get("status") == "success": st.metric("String Arrays", st.session_state.m9_results["stats"]["total_arrays"])
     with tabs[10]:
         if st.session_state.m10_results and st.session_state.m10_results.get("status") == "success": st.metric("Total Functions", st.session_state.m10_results["stats"]["total_functions"])
-
-    # ---------------------------
-    # TAB 12 (M11): Expression Simplification Engine
-    # ---------------------------
     with tabs[11]:
-        st.subheader("✨ Advanced Expression Simplification & Constant Folding")
-        if not st.session_state.m11_results:
-            st.info("Execute the pipeline in Tab 1 to generate Expression Analytics.")
-        else:
-            m11 = st.session_state.m11_results
-            if m11.get("status") == "error":
-                st.error(m11["message"])
-            else:
-                stats = m11["stats"]
-                sc1, sc2, sc3, sc4 = st.columns(4)
-                sc1.metric("Expressions Analyzed", stats["total_expressions"])
-                sc2.metric("Constant Folds", stats["constant_folds"])
-                sc3.metric("Constant Propagations", stats["constant_propagations"])
-                sc4.metric("Arithmetic Simplifications", stats["simplifications"])
-                
-                st.markdown("---")
-                st.markdown("#### 🛠️ Interactive Safe Transformation Sandbox")
-                st.write("Review JS-compliant mathematically safe constant folds (e.g., `2 + 3 -> 5`, `true && x -> x`).")
-                
-                if not m11["replacements"]:
-                    st.success("No expression optimizations available. Code is well simplified.")
-                else:
-                    df_data = []
-                    for r in m11["replacements"]:
-                        df_data.append({
-                            "Apply": True,
-                            "Type": r["type"],
-                            "Original Expression": r["original"],
-                            "Simplified Result": r["resolved"],
-                            "_range": r["range"]
-                        })
-                    
-                    df = pd.DataFrame(df_data)
-                    edited_df = st.data_editor(
-                        df,
-                        column_config={
-                            "Apply": st.column_config.CheckboxColumn("Apply Transform"),
-                            "_range": None # Hide metadata
-                        },
-                        disabled=["Type", "Original Expression", "Simplified Result"],
-                        use_container_width=True
-                    )
-                    
-                    if st.button("🚀 Apply Selected Expression Simplify", type="primary"):
-                        approved = edited_df[edited_df["Apply"] == True]
-                        if approved.empty:
-                            st.warning("No transforms selected.")
-                        else:
-                            payload = [{"apply": True, "range": row["_range"], "resolved_value": row["Simplified Result"]} for _, row in approved.iterrows()]
-                            engine = ExprAnalyzer()
-                            new_code = engine.transform(st.session_state.m11_code_base, payload)
-                            
-                            processed, status = DeobfuscatorEngine().process(new_code)
-                            if status == "Success":
-                                st.session_state.processed_code = processed
-                                st.session_state.m11_code_base = new_code
-                                st.success(f"Successfully optimized {len(payload)} expressions! View Output in Tab 1.")
-                            else:
-                                st.error("Error formatting code.")
+        if st.session_state.m11_results and st.session_state.m11_results.get("status") == "success": st.metric("Expressions Folded", st.session_state.m11_results["stats"]["constant_folds"])
 
-                st.download_button("📄 Download M11 Expr Report (JSON)", json.dumps(m11, indent=4), "expr_report.json", "application/json")
+    # ---------------------------
+    # TAB 13 (M12): Source Reconstruction Dashboard
+    # ---------------------------
+    with tabs[12]:
+        st.subheader("🏗️ Advanced Code Reconstruction & Readability")
+        if not st.session_state.m12_results:
+            st.info("Execute the pipeline in Tab 1 with AST Regeneration enabled to view Readability Analytics.")
+        else:
+            m12 = st.session_state.m12_results
+            old = st.session_state.m12_original_stats
+            
+            st.markdown("#### 📊 Code Quality & Complexity Readability Matrix")
+            st.write("Measures structural density, logical line breaks, and syntactic nesting before and after full pipeline compilation.")
+            
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("Total Line Count", m12.get("total_lines", 0), delta=m12.get("total_lines", 0) - old.get("total_lines", 0), delta_color="inverse")
+            sc2.metric("Avg Line Length", round(m12.get("avg_line_length", 0), 1), delta=round(m12.get("avg_line_length", 0) - old.get("avg_line_length", 0), 1), delta_color="inverse")
+            sc3.metric("Max Nesting Depth", m12.get("max_nesting_depth", 0), delta=m12.get("max_nesting_depth", 0) - old.get("max_nesting_depth", 0), delta_color="inverse")
+            sc4.metric("Statement Density", round(m12.get("statement_density", 0), 2), delta=round(m12.get("statement_density", 0) - old.get("statement_density", 0), 2), delta_color="inverse")
+            
+            st.markdown("---")
+            st.markdown("#### 💻 Pipeline Side-by-Side Validation")
+            c_orig, c_recon = st.columns(2)
+            with c_orig:
+                st.markdown("**Original Obfuscated Code (Pre-Pipeline)**")
+                st.code(st.session_state.m6_original[:3000] + ("\n// ...truncated..." if len(st.session_state.m6_original) > 3000 else ""), language="javascript")
+            with c_recon:
+                st.markdown("**AST-Reconstructed Code (Post-Pipeline)**")
+                st.code(st.session_state.processed_code[:3000] + ("\n// ...truncated..." if len(st.session_state.processed_code) > 3000 else ""), language="javascript")
+            
+            report = {
+                "before_stats": old,
+                "after_stats": m12,
+                "pipeline_success": True
+            }
+            st.download_button("📄 Download M12 Code Quality Report (JSON)", json.dumps(report, indent=4), "quality_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
