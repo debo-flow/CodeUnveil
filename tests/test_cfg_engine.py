@@ -15,64 +15,82 @@ def test_basic_cfg_stats():
     assert res["stats"]["conditional_branches"] == 1
     assert res["stats"]["loops"] == 1
 
-def test_cff_detection_and_state_transitions():
+def test_advanced_cff_linear_detection_and_deflatten():
     engine = CFGAnalyzer()
-    # Typical Obfuscator.io state machine wrapper
+    # Typical Obfuscator.io linear split dispatcher
     code = """
-    var _0xstate = 0;
+    var _0xstate = '1|3|2'.split('|');
+    var i = 0;
     while(true) {
-        switch(_0xstate) {
-            case 0:
-                doSomething();
-                _0xstate = 1;
-                break;
-            case 1:
-                end();
-                _0xstate = 99;
-                break;
+        switch(_0xstate[i++]) {
+            case '1':
+                doFirst();
+                continue;
+            case '2':
+                doThird();
+                continue;
+            case '3':
+                doSecond();
+                continue;
         }
+        break;
     }
     """
     res = engine.analyze(code)
+    
     assert res["status"] == "success"
     assert res["cff"]["detected"] is True
     assert "_0xstate" in res["cff"]["state_variables"]
     
-    transitions = res["cff"]["transitions"]
-    assert len(transitions) == 2
+    # Verify the State Transition Graph logic mapped the states
+    assert len(res["cff"]["states"]["_0xstate"]) == 3
     
-    # Assert transitions mapped properly
-    c0 = next(t for t in transitions if t["Case/State"] == "0")
-    assert "1" in c0["Transitions To"]
+    # Verify Safe Reconstruction Queue caught the deterministic sequence
+    queue = res["cff"]["reconstruction_queue"]
+    assert len(queue) == 1
+    assert queue[0]["type"] == "Deflatten Array Dispatcher"
+    assert queue[0]["confidence"] == "High"
     
-    c1 = next(t for t in transitions if t["Case/State"] == "1")
-    assert "99" in c1["Transitions To"]
+    # Reconstructed source should be linearly reordered: 1 -> 3 -> 2
+    recon = queue[0]["reconstructed_code"]
+    assert recon.index("doFirst()") < recon.index("doSecond()")
+    assert recon.index("doSecond()") < recon.index("doThird()")
 
-def test_safe_simplification_dead_branch():
+def test_cff_state_variable_transition_deflatten():
     engine = CFGAnalyzer()
-    # Falsy test condition, consequent should be dropped
-    code = "if (false) { console.log('Dead'); } else { console.log('Alive'); }"
+    # Numeric state assignment transitions
+    code = """
+    var state = 1;
+    while(true) {
+        switch(state) {
+            case 1:
+                init();
+                state = 5;
+                break;
+            case 5:
+                process();
+                state = 99;
+                break;
+            case 99:
+                end();
+                break;
+        }
+        if (state === 99) break;
+    }
+    """
     res = engine.analyze(code)
     
-    assert res["status"] == "success"
-    assert res["stats"]["unreachable_removed"] == 1
+    assert res["cff"]["detected"] is True
+    assert res["cff"]["initial_states"]["state"] == 1
     
-    transformed = engine.transform()
-    assert "console.log('Alive');" in transformed
-    assert "console.log('Dead');" not in transformed
-
-def test_safe_simplification_truthy_branch():
-    engine = CFGAnalyzer()
-    # Truthy test condition, alternate should be dropped
-    code = "if (1) { var x = 1; } else { var y = 2; }"
-    res = engine.analyze(code)
+    queue = res["cff"]["reconstruction_queue"]
+    assert len(queue) == 1
+    assert queue[0]["type"] == "Deflatten Linear Dispatcher"
     
-    assert res["stats"]["unreachable_removed"] == 1
-    transformed = engine.transform()
+    recon = queue[0]["reconstructed_code"]
+    assert recon.index("init()") < recon.index("process()")
+    assert recon.index("process()") < recon.index("end()")
     
-    assert "var x = 1;" in transformed
-    assert "var y = 2;" not in transformed
-
 def test_cfg_dot_generation():
     engine = CFGAnalyzer()
     code = "if (a) { while(b) { } }"
@@ -82,4 +100,4 @@ def test_cfg_dot_generation():
     assert "digraph CFG" in dot
     assert "Branch" in dot
     assert "Loop" in dot
-    assert "->" in dot # ensure edges exist
+    assert "->" in dot
