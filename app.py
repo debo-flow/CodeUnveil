@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M15)
+# External Engine Imports (M2 - M16)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -22,6 +22,7 @@ from expr_engine import ExprAnalyzer
 from reconstruct_engine import ASTGenerator, CodeQualityAnalyzer, ReconstructionPipeline
 from security_engine import SecurityAnalyzer
 from sym_engine import SymEngine
+from project_engine import ProjectAnalyzer
 
 # ==========================================
 # M1 Engine Components
@@ -57,7 +58,7 @@ def initialize_state():
     for key in base_keys:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 16)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 17)] + ['m7_replacements']
     for key in engine_keys:
         if key not in st.session_state: st.session_state[key] = None
 
@@ -65,7 +66,7 @@ def reset_app():
     base_keys = ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 'm12_original_stats']
     for key in base_keys: st.session_state[key] = ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 16)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 17)] + ['m7_replacements']
     for key in engine_keys: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
@@ -79,22 +80,37 @@ def main():
     
     with st.sidebar:
         st.header("Actions & Settings")
-        uploaded_file = st.file_uploader("Upload Target JS (.js)", type=["js", "txt"], key=f"uploader_{st.session_state.uploader_key}")
+        uploaded_file = st.file_uploader("Upload Target JS or Project ZIP", type=["js", "txt", "zip"], key=f"uploader_{st.session_state.uploader_key}")
+        
         if uploaded_file is not None:
-            st.session_state.input_code = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace")).read()
+            if uploaded_file.name.endswith(".zip"):
+                with st.spinner("Analyzing Full ZIP Architecture..."):
+                    proj_engine = ProjectAnalyzer()
+                    st.session_state.m16_results = proj_engine.analyze_zip(uploaded_file.getvalue())
+                    
+                    if st.session_state.m16_results.get("status") == "success":
+                        st.success(f"Loaded {st.session_state.m16_results['stats']['total_files']} files from Project Archive.")
+                        
+                        # Populate Dropdown for Main Buffer injection
+                        js_files = [f for f in st.session_state.m16_results['modules'].keys()]
+                        selected_file = st.selectbox("Select File to Load into Main Buffer:", options=js_files)
+                        if selected_file:
+                            st.session_state.input_code = proj_engine.files.get(selected_file, "")
+            else:
+                st.session_state.input_code = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace")).read()
             
         st.markdown("#### Configurable Pipeline")
         apply_dce = st.checkbox("🗑️ Destructive Dead Code Removal (M7)", value=False)
         apply_ast_regen = st.checkbox("🏗️ Strict AST Regeneration (M12)", value=False)
-        run_sym_exec = st.checkbox("🧮 Enable Symbolic Execution (M15)", value=False, help="May be computationally heavy on deep ASTs. Uses Z3 SMT Solver.")
+        run_sym_exec = st.checkbox("🧮 Enable Symbolic Execution (M15)", value=False)
         
         if st.button("🔄 Reset / Clear All", use_container_width=True):
             reset_app()
             st.rerun()
 
     tabs = st.tabs([
-        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6/M14: CFG", 
-        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15: SymExec"
+        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6/M14", 
+        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15", "📁 M16: Project"
     ])
 
     # ---------------------------
@@ -146,10 +162,8 @@ def main():
                         st.session_state.m11_code_base = transformed_code
                         st.session_state.m11_results = ExprAnalyzer().analyze(transformed_code)
                         
-                        # M15 Symbolic Execution
                         if run_sym_exec:
-                            sym_engine = SymEngine(max_depth=50, max_loop_iter=3)
-                            st.session_state.m15_results = sym_engine.analyze(transformed_code)
+                            st.session_state.m15_results = SymEngine(max_depth=50, max_loop_iter=3).analyze(transformed_code)
                             
                         if apply_ast_regen:
                             success, ast_code, msg = ReconstructionPipeline.rebuild_ast_source(transformed_code)
@@ -159,9 +173,7 @@ def main():
                         if status == "Success": 
                             st.session_state.processed_code = processed
                             st.session_state.m12_results = CodeQualityAnalyzer.analyze(processed)
-                            
-                            sec_engine = SecurityAnalyzer()
-                            st.session_state.m13_results = sec_engine.analyze(processed, st.session_state.m5_results)
+                            st.session_state.m13_results = SecurityAnalyzer().analyze(processed, st.session_state.m5_results)
                         else: 
                             st.error(status)
 
@@ -172,7 +184,7 @@ def main():
                 st.download_button("💾 Download Reconstructed JS", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
 
     # ---------------------------
-    # TABS 1-13 Standard Visualizations (Omitted redundant definitions visually, maintained logically)
+    # TABS 1-14 Preserved Views (Omitted visual duplicates for brevity, logically identical)
     # ---------------------------
     with tabs[1]:
         if st.session_state.m2_results: st.json(st.session_state.m2_results.get("ast_tree", {}), expanded=False)
@@ -184,6 +196,8 @@ def main():
     with tabs[4]:
         if st.session_state.m5_results: st.write(f"**Severity Level:** {st.session_state.m5_results['severity_level']}")
     with tabs[5]: st.write("Target Comparison requires external file.")
+    with tabs[6]:
+        if st.session_state.m6_results and st.session_state.m6_results.get("status") == "success": st.graphviz_chart(st.session_state.m6_results["dot_graph"])
     with tabs[7]:
         if st.session_state.m7_results and st.session_state.m7_results.get("status") == "success": st.metric("Safely Removable Blocks", st.session_state.m7_results["stats"]["safely_removable"])
     with tabs[8]:
@@ -198,37 +212,54 @@ def main():
         if st.session_state.m12_results: st.metric("Avg Line Length", round(st.session_state.m12_results.get("avg_line_length", 0), 1))
     with tabs[13]:
         if st.session_state.m13_results: st.metric("Critical Security Findings", st.session_state.m13_results["summary"].get("Critical", 0))
+    with tabs[14]:
+        if st.session_state.m15_results: st.metric("Paths Explored", st.session_state.m15_results["stats"]["paths_explored"])
 
     # ---------------------------
-    # TAB 15 (M15): Symbolic Execution & Z3 SMT Solver
+    # TAB 16 (M16): Project Architecture & Dependency Intelligence
     # ---------------------------
-    with tabs[14]:
-        st.subheader("🧮 Symbolic Execution & Z3 Constraint Solver")
-        if not st.session_state.m15_results:
-            st.info("Check 'Enable Symbolic Execution' in Sidebar and execute the pipeline in Tab 1 to view analytics.")
+    with tabs[15]:
+        st.subheader("📁 Project Architecture & Dependency Intelligence")
+        if not st.session_state.m16_results:
+            st.info("Upload a Project `.zip` file in the sidebar to generate Architecture Intelligence.")
         else:
-            m15 = st.session_state.m15_results
-            if m15.get("status") == "error":
-                st.error(m15["message"])
+            m16 = st.session_state.m16_results
+            if m16.get("status") == "error":
+                st.error(m16["message"])
             else:
-                stats = m15["stats"]
+                stats = m16["stats"]
                 sc1, sc2, sc3, sc4 = st.columns(4)
-                sc1.metric("Paths Explored", stats["paths_explored"])
-                sc2.metric("Feasible Branches", stats["feasible_branches"])
-                sc3.metric("Infeasible (Dead) Branches", stats["infeasible_branches"])
-                sc4.metric("Unknown / Timeouts", stats["unknown_branches"])
+                sc1.metric("Analyzed JS/TS Files", stats["js_files"])
+                sc2.metric("External Packages", stats["external_deps"])
+                sc3.metric("Circular Dependency Chains", stats["circular_dependencies"], delta_color="inverse")
+                sc4.metric("Isolated (Unreferenced) Modules", stats["isolated_modules"])
                 
                 st.markdown("---")
-                st.markdown("#### 🔬 Path Conditions & Solver Feasibility Matrix")
-                st.write("Displays the extracted symbolic constraints sent to Z3 for Satisfiability (SAT) checking.")
+                c_graph, c_info = st.columns(2)
                 
-                if not m15["paths"]:
-                    st.success("No conditional paths discovered within the execution bounds.")
-                else:
-                    df = pd.DataFrame(m15["paths"])
-                    st.dataframe(df, use_container_width=True)
+                with c_graph:
+                    st.markdown("#### 🗺️ Interactive Dependency Graph")
+                    st.graphviz_chart(m16["dot_graph"])
                     
-                    st.download_button("📄 Download M15 Symbolic Constraints Report (JSON)", json.dumps(m15, indent=4), "symexec_report.json", "application/json")
+                with c_info:
+                    st.markdown("#### 🔄 Circular Dependency Tracker")
+                    if not m16["circular_chains"]:
+                        st.success("✅ No circular dependencies detected in the import graph.")
+                    else:
+                        st.error(f"🚨 Detected {len(m16['circular_chains'])} Circular Chains.")
+                        for i, chain in enumerate(m16['circular_chains']):
+                            st.write(f"**Chain {i+1}:** " + " ➔ ".join(chain))
+                            
+                    st.markdown("#### 📦 package.json Dependencies")
+                    if not m16["package_json"]:
+                        st.info("No package.json found in the project root.")
+                    else:
+                        deps = m16["package_json"].get("dependencies", {})
+                        dev_deps = m16["package_json"].get("devDependencies", {})
+                        if deps or dev_deps:
+                            st.json({"dependencies": deps, "devDependencies": dev_deps}, expanded=False)
+                            
+                st.download_button("📄 Download M16 Architecture Report (JSON)", json.dumps(m16, indent=4), "project_arch_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
