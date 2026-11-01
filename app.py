@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M16)
+# External Engine Imports (M2 - M17)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -23,6 +23,7 @@ from reconstruct_engine import ASTGenerator, CodeQualityAnalyzer, Reconstruction
 from security_engine import SecurityAnalyzer
 from sym_engine import SymEngine
 from project_engine import ProjectAnalyzer
+from similarity_engine import SimilarityEngine
 
 # ==========================================
 # M1 Engine Components
@@ -54,19 +55,27 @@ class DeobfuscatorEngine:
 # UI Configuration & State Management
 # ==========================================
 def initialize_state():
-    base_keys = ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 'm12_original_stats']
+    base_keys = [
+        'uploader_key', 'input_code', 'processed_code', 'm6_original', 
+        'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 
+        'm14_code_base', 'm12_original_stats', 'm17_target_code'
+    ]
     for key in base_keys:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 17)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 18)] + ['m7_replacements']
     for key in engine_keys:
         if key not in st.session_state: st.session_state[key] = None
 
 def reset_app():
-    base_keys = ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 'm12_original_stats']
+    base_keys = [
+        'input_code', 'processed_code', 'm6_original', 'm8_code_base', 
+        'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 
+        'm12_original_stats', 'm17_target_code'
+    ]
     for key in base_keys: st.session_state[key] = ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 17)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 18)] + ['m7_replacements']
     for key in engine_keys: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
@@ -80,24 +89,26 @@ def main():
     
     with st.sidebar:
         st.header("Actions & Settings")
-        uploaded_file = st.file_uploader("Upload Target JS or Project ZIP", type=["js", "txt", "zip"], key=f"uploader_{st.session_state.uploader_key}")
+        uploaded_file = st.file_uploader("Upload Source A (.js/.zip)", type=["js", "txt", "zip"], key=f"uploader_{st.session_state.uploader_key}")
         
         if uploaded_file is not None:
             if uploaded_file.name.endswith(".zip"):
-                with st.spinner("Analyzing Full ZIP Architecture..."):
+                with st.spinner("Analyzing Full ZIP Architecture (M16)..."):
                     proj_engine = ProjectAnalyzer()
                     st.session_state.m16_results = proj_engine.analyze_zip(uploaded_file.getvalue())
-                    
                     if st.session_state.m16_results.get("status") == "success":
                         st.success(f"Loaded {st.session_state.m16_results['stats']['total_files']} files from Project Archive.")
-                        
-                        # Populate Dropdown for Main Buffer injection
                         js_files = [f for f in st.session_state.m16_results['modules'].keys()]
-                        selected_file = st.selectbox("Select File to Load into Main Buffer:", options=js_files)
+                        selected_file = st.selectbox("Select File to Load into Source A:", options=js_files)
                         if selected_file:
                             st.session_state.input_code = proj_engine.files.get(selected_file, "")
             else:
                 st.session_state.input_code = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace")).read()
+        
+        # Target B Upload for Similarity Engine
+        upload_b = st.file_uploader("Upload Source B (.js) for Clone Comp.", type=["js", "txt"], key="upload_b")
+        if upload_b is not None:
+            st.session_state.m17_target_code = io.StringIO(upload_b.getvalue().decode("utf-8", errors="replace")).read()
             
         st.markdown("#### Configurable Pipeline")
         apply_dce = st.checkbox("🗑️ Destructive Dead Code Removal (M7)", value=False)
@@ -109,8 +120,8 @@ def main():
             st.rerun()
 
     tabs = st.tabs([
-        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6/M14", 
-        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15", "📁 M16: Project"
+        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "🔀 M6/M14", 
+        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15", "📁 M16", "🧬 M17: Clones"
     ])
 
     # ---------------------------
@@ -174,6 +185,11 @@ def main():
                             st.session_state.processed_code = processed
                             st.session_state.m12_results = CodeQualityAnalyzer.analyze(processed)
                             st.session_state.m13_results = SecurityAnalyzer().analyze(processed, st.session_state.m5_results)
+                            
+                            # M17 Auto-Run Clone Detection if Source B exists
+                            if st.session_state.m17_target_code:
+                                sim_engine = SimilarityEngine()
+                                st.session_state.m17_results = sim_engine.compare(user_input, st.session_state.m17_target_code)
                         else: 
                             st.error(status)
 
@@ -184,82 +200,50 @@ def main():
                 st.download_button("💾 Download Reconstructed JS", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
 
     # ---------------------------
-    # TABS 1-14 Preserved Views (Omitted visual duplicates for brevity, logically identical)
-    # ---------------------------
-    with tabs[1]:
-        if st.session_state.m2_results: st.json(st.session_state.m2_results.get("ast_tree", {}), expanded=False)
-    with tabs[2]:
-        if st.session_state.m3_results: st.metric("Extracted Strings", st.session_state.m3_results["stats"]["total_strings"])
-    with tabs[3]:
-        if st.session_state.m4_results is not None:
-            if st.session_state.m4_results: st.dataframe(pd.DataFrame(st.session_state.m4_results).drop(columns=["Full Decoded"]), use_container_width=True)
-    with tabs[4]:
-        if st.session_state.m5_results: st.write(f"**Severity Level:** {st.session_state.m5_results['severity_level']}")
-    with tabs[5]: st.write("Target Comparison requires external file.")
-    with tabs[6]:
-        if st.session_state.m6_results and st.session_state.m6_results.get("status") == "success": st.graphviz_chart(st.session_state.m6_results["dot_graph"])
-    with tabs[7]:
-        if st.session_state.m7_results and st.session_state.m7_results.get("status") == "success": st.metric("Safely Removable Blocks", st.session_state.m7_results["stats"]["safely_removable"])
-    with tabs[8]:
-        if st.session_state.m8_results and st.session_state.m8_results.get("status") == "success": st.metric("Total Identifiers", st.session_state.m8_results["stats"]["total_identifiers"])
-    with tabs[9]:
-        if st.session_state.m9_results and st.session_state.m9_results.get("status") == "success": st.metric("String Arrays", st.session_state.m9_results["stats"]["total_arrays"])
-    with tabs[10]:
-        if st.session_state.m10_results and st.session_state.m10_results.get("status") == "success": st.metric("Total Functions", st.session_state.m10_results["stats"]["total_functions"])
-    with tabs[11]:
-        if st.session_state.m11_results and st.session_state.m11_results.get("status") == "success": st.metric("Expressions Folded", st.session_state.m11_results["stats"]["constant_folds"])
-    with tabs[12]:
-        if st.session_state.m12_results: st.metric("Avg Line Length", round(st.session_state.m12_results.get("avg_line_length", 0), 1))
-    with tabs[13]:
-        if st.session_state.m13_results: st.metric("Critical Security Findings", st.session_state.m13_results["summary"].get("Critical", 0))
-    with tabs[14]:
-        if st.session_state.m15_results: st.metric("Paths Explored", st.session_state.m15_results["stats"]["paths_explored"])
-
-    # ---------------------------
-    # TAB 16 (M16): Project Architecture & Dependency Intelligence
+    # TAB 16 (M17): Clone Detection & Fingerprinting
     # ---------------------------
     with tabs[15]:
-        st.subheader("📁 Project Architecture & Dependency Intelligence")
-        if not st.session_state.m16_results:
-            st.info("Upload a Project `.zip` file in the sidebar to generate Architecture Intelligence.")
+        st.subheader("🧬 Code Similarity, Clone Detection & Fingerprinting Engine")
+        
+        if not st.session_state.m17_target_code:
+            st.info("Upload 'Source B' in the sidebar and execute the pipeline to generate Clone Similarity analytics.")
+        elif not st.session_state.m17_results:
+            st.warning("Execute the pipeline in Tab 1 to run comparisons.")
         else:
-            m16 = st.session_state.m16_results
-            if m16.get("status") == "error":
-                st.error(m16["message"])
+            m17 = st.session_state.m17_results
+            if m17.get("status") == "error":
+                st.error(m17["message"])
             else:
-                stats = m16["stats"]
-                sc1, sc2, sc3, sc4 = st.columns(4)
-                sc1.metric("Analyzed JS/TS Files", stats["js_files"])
-                sc2.metric("External Packages", stats["external_deps"])
-                sc3.metric("Circular Dependency Chains", stats["circular_dependencies"], delta_color="inverse")
-                sc4.metric("Isolated (Unreferenced) Modules", stats["isolated_modules"])
+                stats = m17["stats"]
+                mets = m17["metrics"]
+                
+                score = stats["overall_similarity_score"] * 100
+                score_color = "red" if score > 85 else "orange" if score > 50 else "green"
+                st.markdown(f"### Overall Structural Similarity: <span style='color:{score_color}'>{score:.2f}%</span>", unsafe_allow_html=True)
                 
                 st.markdown("---")
-                c_graph, c_info = st.columns(2)
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric("AST Jaccard Index", f"{stats['ast_jaccard_score']*100:.1f}%")
+                sc2.metric("Token Frequency Score", f"{mets['cosine_freq_score']*100:.1f}%")
+                sc3.metric("CFG Edge Similarity", f"{stats['cfg_edge_similarity']*100:.1f}%")
+                sc4.metric("Type-1 Exact Clone?", "Yes" if stats["type1_exact_match"] else "No")
                 
-                with c_graph:
-                    st.markdown("#### 🗺️ Interactive Dependency Graph")
-                    st.graphviz_chart(m16["dot_graph"])
+                st.markdown("---")
+                st.markdown("#### 🔍 Structural Hash Fingerprints (Normalized)")
+                st.info("These fingerprints ignore mutable literals and renamed identifiers (Type-2 Clone check). If they match, the files are structurally identical obfuscated payloads.")
+                
+                hc1, hc2 = st.columns(2)
+                hc1.metric("Source A Fingerprint", stats["fingerprint_a"])
+                hc2.metric("Source B Fingerprint", stats["fingerprint_b"])
+                
+                if stats["type2_normalized_match"]:
+                    st.error("🚨 CRITICAL: Type-2 Clone Detected! Both files share identical control-flow and AST structures despite differing variable names.")
+                elif score > 85:
+                    st.warning("⚠️ High Similarity: Type-3 Clone Detected! Minor structural deviations but highly homologous payloads.")
+                else:
+                    st.success("✅ Files are structurally distinct. Semantic equivalence is highly unlikely.")
                     
-                with c_info:
-                    st.markdown("#### 🔄 Circular Dependency Tracker")
-                    if not m16["circular_chains"]:
-                        st.success("✅ No circular dependencies detected in the import graph.")
-                    else:
-                        st.error(f"🚨 Detected {len(m16['circular_chains'])} Circular Chains.")
-                        for i, chain in enumerate(m16['circular_chains']):
-                            st.write(f"**Chain {i+1}:** " + " ➔ ".join(chain))
-                            
-                    st.markdown("#### 📦 package.json Dependencies")
-                    if not m16["package_json"]:
-                        st.info("No package.json found in the project root.")
-                    else:
-                        deps = m16["package_json"].get("dependencies", {})
-                        dev_deps = m16["package_json"].get("devDependencies", {})
-                        if deps or dev_deps:
-                            st.json({"dependencies": deps, "devDependencies": dev_deps}, expanded=False)
-                            
-                st.download_button("📄 Download M16 Architecture Report (JSON)", json.dumps(m16, indent=4), "project_arch_report.json", "application/json")
+                st.download_button("📄 Download M17 Similarity Report (JSON)", json.dumps(m17, indent=4), "similarity_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
