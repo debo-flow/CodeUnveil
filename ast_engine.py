@@ -15,7 +15,9 @@ class ASTAnalyzer:
         self.complexity = {
             "max_nesting_depth": 0, "cyclomatic_complexity": 1,
             "suspicious_wrappers": 0, "computed_property_access": 0,
-            "unusual_variable_names": 0, "large_string_collections": 0
+            "unusual_variable_names": 0, "large_string_collections": 0,
+            "switch_in_loop": 0, "debugger_statements": 0, 
+            "unary_booleans": 0, "empty_blocks": 0
         }
         self.raw_ast = None
         self.ast_dict = None
@@ -38,16 +40,17 @@ class ASTAnalyzer:
         if len(name) <= 2 or name.startswith("_0x"): return True
         return False
 
-    def _walk_ast(self, node: Any, depth: int = 0):
+    def _walk_ast(self, node: Any, depth: int = 0, in_loop: bool = False):
         if not node: return
         if isinstance(node, list):
-            for item in node: self._walk_ast(item, depth)
+            for item in node: self._walk_ast(item, depth, in_loop)
             return
         if not hasattr(node, 'type'): return
 
         self.stats["total_nodes"] += 1
         self.complexity["max_nesting_depth"] = max(self.complexity["max_nesting_depth"], depth)
         ntype = node.type
+        current_in_loop = in_loop
 
         if ntype in ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']:
             self.stats["functions"] += 1
@@ -62,7 +65,11 @@ class ASTAnalyzer:
         elif ntype in ['ForStatement', 'WhileStatement', 'DoWhileStatement', 'ForInStatement', 'ForOfStatement']:
             self.stats["loops"] += 1
             self.complexity["cyclomatic_complexity"] += 1
-        elif ntype in ['IfStatement', 'SwitchStatement', 'ConditionalExpression', 'LogicalExpression']:
+            current_in_loop = True
+        elif ntype == 'SwitchStatement':
+            if current_in_loop: self.complexity["switch_in_loop"] += 1
+            self.stats["conditionals"] += 1
+        elif ntype in ['IfStatement', 'ConditionalExpression', 'LogicalExpression']:
             if ntype != 'LogicalExpression': self.stats["conditionals"] += 1
             self.complexity["cyclomatic_complexity"] += 1
         elif ntype == 'CallExpression':
@@ -80,11 +87,17 @@ class ASTAnalyzer:
             self.stats["objects"] += 1
         elif ntype == 'MemberExpression':
             if getattr(node, 'computed', False): self.complexity["computed_property_access"] += 1
+        elif ntype == 'DebuggerStatement':
+            self.complexity["debugger_statements"] += 1
+        elif ntype == 'BlockStatement':
+            if not getattr(node, 'body', []): self.complexity["empty_blocks"] += 1
+        elif ntype == 'UnaryExpression':
+            if getattr(node, 'operator', '') == '!': self.complexity["unary_booleans"] += 1
 
         for key, value in vars(node).items():
             if key in ['type', 'loc', 'range']: continue
             if isinstance(value, list) or hasattr(value, 'type'):
-                self._walk_ast(value, depth + 1)
+                self._walk_ast(value, depth + 1, current_in_loop)
 
     def analyze(self, code: str) -> Dict[str, Any]:
         self.reset_metrics()
@@ -93,7 +106,7 @@ class ASTAnalyzer:
         try:
             self.raw_ast = esprima.parseScript(code, {"loc": False, "range": True, "tolerant": True})
             self.ast_dict = self._ast_to_dict(self.raw_ast)
-            self._walk_ast(self.raw_ast, depth=0)
+            self._walk_ast(self.raw_ast, depth=0, in_loop=False)
             return {"status": "success", "stats": self.stats, "complexity": self.complexity, "ast_tree": self.ast_dict}
         except esprima.Error as e:
             return {"status": "error", "message": f"AST Parsing Error: {str(e)}"}
