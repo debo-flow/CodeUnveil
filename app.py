@@ -3,17 +3,16 @@ import jsbeautifier
 import re
 import io
 import json
+import pandas as pd
 from typing import Dict, Any, Tuple
 
-# Import the new Milestone 2 Module
 from ast_engine import ASTAnalyzer
+from string_engine import StringAnalyzer
 
 # ==========================================
 # M1 Engine Components (Preserved)
 # ==========================================
-
 class CodeAnalyzer:
-    """Handles static RegExp analysis (Milestone 1)."""
     @staticmethod
     def analyze(code: str) -> Dict[str, Any]:
         if not code or not code.strip():
@@ -33,7 +32,6 @@ class CodeAnalyzer:
         }
 
 class DeobfuscatorEngine:
-    """Handles basic formatting safely (Milestone 1)."""
     @staticmethod
     def process(code: str) -> Tuple[str, str]:
         if not code or not code.strip():
@@ -52,10 +50,10 @@ class DeobfuscatorEngine:
         except Exception as e:
             return "", f"Processing Error: {str(e)}"
 
-# ==========================================
-# User Interface (Streamlit)
-# ==========================================
 
+# ==========================================
+# UI Configuration & State
+# ==========================================
 def initialize_state():
     if 'uploader_key' not in st.session_state:
         st.session_state.uploader_key = 0
@@ -67,37 +65,25 @@ def initialize_state():
         st.session_state.m1_results = None
     if 'm2_results' not in st.session_state:
         st.session_state.m2_results = None
+    if 'm3_results' not in st.session_state:
+        st.session_state.m3_results = None
 
 def reset_app():
     st.session_state.input_code = ""
     st.session_state.processed_code = ""
     st.session_state.m1_results = None
     st.session_state.m2_results = None
+    st.session_state.m3_results = None
     st.session_state.uploader_key += 1
 
 def main():
-    st.set_page_config(
-        page_title="CodeUnveil | Advanced JS Laboratory",
-        page_icon="🛡️",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-
+    st.set_page_config(page_title="CodeUnveil | Advanced JS Laboratory", page_icon="🛡️", layout="wide", initial_sidebar_state="expanded")
     initialize_state()
 
     st.markdown("""
         <style>
-        .stTextArea textarea {
-            font-family: 'Courier New', monospace;
-            background-color: #1e1e1e !important;
-            color: #d4d4d4 !important;
-        }
-        .metric-card {
-            background-color: #262730;
-            border-radius: 5px;
-            padding: 15px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
+        .stTextArea textarea { font-family: 'Courier New', monospace; background-color: #1e1e1e !important; color: #d4d4d4 !important; }
+        .metric-card { background-color: #262730; border-radius: 5px; padding: 15px; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -106,11 +92,7 @@ def main():
     
     with st.sidebar:
         st.header("Actions & Settings")
-        uploaded_file = st.file_uploader(
-            "Upload JavaScript (.js)", 
-            type=["js", "txt"], 
-            key=f"uploader_{st.session_state.uploader_key}"
-        )
+        uploaded_file = st.file_uploader("Upload JavaScript (.js)", type=["js", "txt"], key=f"uploader_{st.session_state.uploader_key}")
         
         if uploaded_file is not None:
             stringio = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace"))
@@ -121,110 +103,124 @@ def main():
             st.rerun()
 
         st.markdown("---")
-        st.markdown("**Security Guardrails Active**\n* AST Parsers isolate execution.\n* 1 MB File size limit applied.")
+        st.markdown("**Security Guardrails Active**\n* Zero code execution.\n* 1 MB memory guard active.")
 
-    # Main Tabs
-    tab1, tab2 = st.tabs(["🚀 M1: Static Beautifier & Regex", "🌳 M2: AST Explorer & Complexity Analysis"])
+    tab1, tab2, tab3 = st.tabs(["🚀 Main Deobfuscator", "🌳 M2: AST Explorer", "🧶 M3: String Analytics"])
 
     # ---------------------------
-    # TAB 1: Milestone 1 Engine
+    # TAB 1: Main Processor
     # ---------------------------
     with tab1:
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Input Original JavaScript")
-            user_input = st.text_area("Paste obfuscated code here:", value=st.session_state.input_code, height=350, key="input_text_area")
+            user_input = st.text_area("Paste obfuscated code here:", value=st.session_state.input_code, height=350)
             
-            if st.button("🚀 Analyze & Deobfuscate", type="primary", use_container_width=True):
+            if st.button("🚀 Analyze & Deobfuscate Pipeline", type="primary", use_container_width=True):
                 if not user_input.strip():
                     st.error("Please provide JavaScript code.")
                 else:
-                    with st.spinner("Processing AST and M1 tasks..."):
-                        # M1 Run
-                        m1_analyzer = CodeAnalyzer()
-                        st.session_state.m1_results = m1_analyzer.analyze(user_input)
+                    with st.spinner("Executing Full Static Pipeline..."):
+                        # 1. Run Original Metrics (M1 & M2)
+                        st.session_state.m1_results = CodeAnalyzer().analyze(user_input)
+                        st.session_state.m2_results = ASTAnalyzer().analyze(user_input)
                         
-                        engine = DeobfuscatorEngine()
-                        processed, status = engine.process(user_input)
+                        # 2. String Deobfuscation Engine (M3)
+                        string_engine = StringAnalyzer()
+                        st.session_state.m3_results = string_engine.analyze(user_input)
+                        
+                        # 3. Apply Transformations securely
+                        if st.session_state.m3_results.get("status") == "success":
+                            transformed_code = string_engine.transform()
+                        else:
+                            transformed_code = user_input
+                            
+                        # 4. Standard Beautification
+                        processed, status = DeobfuscatorEngine().process(transformed_code)
                         if status == "Success":
                             st.session_state.processed_code = processed
                         else:
                             st.error(status)
-                            
-                        # M2 Run (Triggered here to sync states)
-                        m2_analyzer = ASTAnalyzer()
-                        st.session_state.m2_results = m2_analyzer.analyze(user_input)
 
         with col2:
-            st.subheader("Output Processed Code")
+            st.subheader("Output Deobfuscated Code")
             st.text_area("Normalized result:", value=st.session_state.processed_code, height=350, disabled=True)
             if st.session_state.processed_code:
-                st.download_button(
-                    label="💾 Download Processed Code",
-                    data=st.session_state.processed_code,
-                    file_name="codeunveil_output.js",
-                    mime="text/javascript",
-                    use_container_width=True
-                )
+                st.download_button("💾 Download Processed Code", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
 
         if st.session_state.m1_results and st.session_state.processed_code:
             st.markdown("---")
-            st.subheader("📊 M1 Static Regex Report")
             m1 = st.session_state.m1_results
             proc_lines = len(st.session_state.processed_code.splitlines())
             mc1, mc2, mc3, mc4 = st.columns(4)
             mc1.metric("Original Lines", m1["original_lines"])
             mc2.metric("Formatted Lines", proc_lines, delta=proc_lines - m1["original_lines"])
-            mc3.metric("Hex Literals", m1["hex_count"])
-            mc4.metric("Escaped Strings", m1["escaped_count"])
+            mc3.metric("Regex Hex Literals", m1["hex_count"])
+            mc4.metric("Regex Escaped Strings", m1["escaped_count"])
 
     # ---------------------------
-    # TAB 2: Milestone 2 Engine
+    # TAB 2: AST Explorer
     # ---------------------------
     with tab2:
         if not st.session_state.m2_results:
-            st.info("Please enter code and click 'Analyze & Deobfuscate' in the first tab to view AST analysis.")
+            st.info("Awaiting execution pipeline...")
         else:
             m2 = st.session_state.m2_results
             if m2.get("status") == "error":
-                st.error("### AST Parsing Failed")
                 st.error(m2["message"])
-                st.warning("The input code contains invalid syntax or is not standard JavaScript.")
             else:
-                st.subheader("⚙️ Code Complexity & Obfuscation Metrics")
-                stats = m2["stats"]
-                comp = m2["complexity"]
-
+                stats, comp = m2["stats"], m2["complexity"]
                 rc1, rc2, rc3, rc4 = st.columns(4)
-                rc1.metric("Total AST Nodes", stats["total_nodes"])
+                rc1.metric("AST Nodes", stats["total_nodes"])
                 rc2.metric("Functions", stats["functions"])
-                rc3.metric("Variables/Constants", stats["variables"] + stats["constants"])
+                rc3.metric("Variables", stats["variables"] + stats["constants"])
                 rc4.metric("Cyclomatic Complexity", comp["cyclomatic_complexity"])
 
-                st.markdown("#### Detected Obfuscation Patterns (AST-based)")
-                p1, p2, p3, p4 = st.columns(4)
-                p1.metric("Unusual Variable Names", comp["unusual_variable_names"], delta_color="inverse")
-                p2.metric("Computed Properties", comp["computed_property_access"], delta_color="inverse")
-                p3.metric("Suspicious Function Wrappers", comp["suspicious_wrappers"], delta_color="inverse")
-                p4.metric("Large String Collections", comp["large_string_collections"], delta_color="inverse")
-                
-                # Report Download
-                report_data = {
-                    "statistics": stats, 
-                    "complexity": comp
-                }
-                st.download_button(
-                    label="📄 Download AST Analysis JSON",
-                    data=json.dumps(report_data, indent=4),
-                    file_name="ast_analysis_report.json",
-                    mime="application/json"
-                )
-
-                st.markdown("---")
+                st.download_button("📄 Download AST JSON", json.dumps(m2, indent=4), "ast_analysis.json", "application/json")
                 st.subheader("🌳 Interactive AST Explorer")
-                st.markdown("Expand nodes below to explore the parsed syntax structure of the JavaScript code.")
-                # Native Streamlit JSON renders interactively natively
                 st.json(m2["ast_tree"], expanded=False)
+
+    # ---------------------------
+    # TAB 3: Advanced String Analytics (M3)
+    # ---------------------------
+    with tab3:
+        if not st.session_state.m3_results:
+            st.info("Awaiting execution pipeline...")
+        else:
+            m3 = st.session_state.m3_results
+            if m3.get("status") == "error":
+                st.error(m3["message"])
+            else:
+                st.subheader("🧶 AST-Driven String Deobfuscation Metrics")
+                stats = m3["stats"]
+                
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total Strings", stats["total_strings"])
+                c2.metric("Escaped/Encoded", stats["encoded_strings"])
+                c3.metric("Successfully Decoded", stats["decoded_strings"], delta=stats["failed_decodings"] * -1)
+                c4.metric("Concatenations Folded", stats["concatenations_folded"])
+
+                # Report Download
+                st.download_button("📄 Download String JSON Report", json.dumps(m3, indent=4), "string_analysis.json", "application/json")
+
+                # Decoded Strings View
+                encoded = [s for s in m3["strings"] if s["is_encoded"]]
+                if encoded:
+                    st.markdown("#### 🔓 Decoded Strings Pipeline")
+                    df_enc = pd.DataFrame([{"Original Raw": s["raw"], "Decoded Content": s["value"]} for s in encoded])
+                    st.dataframe(df_enc, use_container_width=True)
+
+                # Concatenations View
+                if m3["concatenations"]:
+                    st.markdown("#### 🔗 Folded Static Concatenations")
+                    df_conc = pd.DataFrame([{"Original Expression": c["raw_expression"], "Evaluated Result": c["result"]} for c in m3["concatenations"]])
+                    st.dataframe(df_conc, use_container_width=True)
+
+                # Arrays View
+                if m3["arrays"]:
+                    st.markdown("#### 📚 Discovered String Arrays (Lookup Tables)")
+                    df_arr = pd.DataFrame([{"Array Size": a["size"], "Preview": str(a["preview"]), "Original Raw": a["raw"]} for a in m3["arrays"]])
+                    st.dataframe(df_arr, use_container_width=True)
 
 if __name__ == "__main__":
     main()
