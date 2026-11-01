@@ -1,3 +1,62 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeunveil"
+version = "1.0.0"
+description = "Reveal the Logic Behind Obfuscated Code. Advanced JS Static Analysis Laboratory."
+readme = "docs/README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "CodeUnveil Team", email = "security@codeunveil.local" }
+]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Software Development :: Compilers",
+]
+dependencies = [
+    "streamlit>=1.28.0",
+    "jsbeautifier>=1.14.11",
+    "esprima>=4.0.1",
+    "pandas>=2.0.0",
+    "z3-solver>=4.12.0",
+    "psutil>=5.9.0",
+    "streamlit-ace>=0.1.1",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.23.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "bandit>=1.7.5",
+    "mypy>=1.6.0"
+]
+
+[project.scripts]
+codeunveil = "codeunveil_cli:main"
+
+[tool.setuptools]
+py-modules = [
+    "app", "codeunveil_cli", "ast_engine", "string_engine", "encoding_engine", 
+    "signature_db", "detection_engine", "cfg_engine", "dce_engine", "rename_engine", 
+    "array_engine", "function_engine", "expr_engine", "reconstruct_engine", 
+    "security_rules", "security_engine", "sym_engine", "project_engine", 
+    "similarity_engine", "semantic_engine", "validation_engine", "workspace_engine", 
+    "perf_engine", "plugin_engine", "api_server", "qa_engine"
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
@@ -7,9 +66,3 @@ exclude = ["plugins/templates/*", ".git", "__pycache__", "venv"]
 minversion = "7.0"
 addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
-
-[tool.mypy]
-python_version = "3.11"
-warn_return_any = true
-warn_unused_configs = true
-ignore_missing_imports = true
