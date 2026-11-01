@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M14)
+# External Engine Imports (M2 - M15)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -21,6 +21,7 @@ from function_engine import FunctionAnalyzer
 from expr_engine import ExprAnalyzer
 from reconstruct_engine import ASTGenerator, CodeQualityAnalyzer, ReconstructionPipeline
 from security_engine import SecurityAnalyzer
+from sym_engine import SymEngine
 
 # ==========================================
 # M1 Engine Components
@@ -56,7 +57,7 @@ def initialize_state():
     for key in base_keys:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 15)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 16)] + ['m7_replacements']
     for key in engine_keys:
         if key not in st.session_state: st.session_state[key] = None
 
@@ -64,7 +65,7 @@ def reset_app():
     base_keys = ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 'm12_original_stats']
     for key in base_keys: st.session_state[key] = ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 15)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 16)] + ['m7_replacements']
     for key in engine_keys: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
@@ -85,14 +86,15 @@ def main():
         st.markdown("#### Configurable Pipeline")
         apply_dce = st.checkbox("🗑️ Destructive Dead Code Removal (M7)", value=False)
         apply_ast_regen = st.checkbox("🏗️ Strict AST Regeneration (M12)", value=False)
+        run_sym_exec = st.checkbox("🧮 Enable Symbolic Execution (M15)", value=False, help="May be computationally heavy on deep ASTs. Uses Z3 SMT Solver.")
         
         if st.button("🔄 Reset / Clear All", use_container_width=True):
             reset_app()
             st.rerun()
 
     tabs = st.tabs([
-        "🚀 Main", "🌳 M2: AST", "🧶 M3: Strings", "🧮 M4: Encodings", "🚨 M5: Obfuscator", "⚖️ Compare", "🔀 M6/M14: CFG", 
-        "🪦 M7: DCE", "🏷️ M8: Renaming", "📦 M9: Arrays", "⚙️ M10: Functions", "✨ M11: Expr", "🏗️ M12: Recon", "🛡️ M13: Security"
+        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6/M14: CFG", 
+        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15: SymExec"
     ])
 
     # ---------------------------
@@ -123,11 +125,9 @@ def main():
                         
                         st.session_state.m5_results = DetectionEngine().analyze(user_input, st.session_state.m2_results)
                         
-                        # M6 & M14: CFG & Deflatten Engine
                         cfg_engine = CFGAnalyzer()
-                        st.session_state.m14_code_base = transformed_code # Base for M14 Deflatten interaction
+                        st.session_state.m14_code_base = transformed_code
                         st.session_state.m6_results = cfg_engine.analyze(transformed_code)
-                        # We apply M6 simplifications immediately, but hold M14 deflatten for user interaction
                         if st.session_state.m6_results.get("status") == "success":
                             transformed_code = cfg_engine.transform(transformed_code, approved_deflatten=[])
 
@@ -139,15 +139,17 @@ def main():
 
                         st.session_state.m8_code_base = transformed_code
                         st.session_state.m8_results = RenameAnalyzer().analyze(transformed_code)
-                        
                         st.session_state.m9_code_base = transformed_code
                         st.session_state.m9_results = ArrayAnalyzer().analyze(transformed_code)
-                        
                         st.session_state.m10_code_base = transformed_code
                         st.session_state.m10_results = FunctionAnalyzer().analyze(transformed_code)
-                        
                         st.session_state.m11_code_base = transformed_code
                         st.session_state.m11_results = ExprAnalyzer().analyze(transformed_code)
+                        
+                        # M15 Symbolic Execution
+                        if run_sym_exec:
+                            sym_engine = SymEngine(max_depth=50, max_loop_iter=3)
+                            st.session_state.m15_results = sym_engine.analyze(transformed_code)
                             
                         if apply_ast_regen:
                             success, ast_code, msg = ReconstructionPipeline.rebuild_ast_source(transformed_code)
@@ -198,100 +200,35 @@ def main():
         if st.session_state.m13_results: st.metric("Critical Security Findings", st.session_state.m13_results["summary"].get("Critical", 0))
 
     # ---------------------------
-    # TAB 7 (M6/M14): Advanced CFG & Deflattening Engine
+    # TAB 15 (M15): Symbolic Execution & Z3 SMT Solver
     # ---------------------------
-    with tabs[6]:
-        st.subheader("🔀 Advanced Control Flow & Deflattening Engine")
-        if not st.session_state.m6_results:
-            st.info("Execute the pipeline in Tab 1 to generate CFG Analytics.")
+    with tabs[14]:
+        st.subheader("🧮 Symbolic Execution & Z3 Constraint Solver")
+        if not st.session_state.m15_results:
+            st.info("Check 'Enable Symbolic Execution' in Sidebar and execute the pipeline in Tab 1 to view analytics.")
         else:
-            m14 = st.session_state.m6_results
-            if m14.get("status") == "error":
-                st.error(m14["message"])
+            m15 = st.session_state.m15_results
+            if m15.get("status") == "error":
+                st.error(m15["message"])
             else:
-                stats = m14["stats"]
-                cff = m14["cff"]
-                
-                sc1, sc2, sc3, sc4, sc5 = st.columns(5)
-                sc1.metric("Basic Blocks", stats["basic_blocks"])
-                sc2.metric("CFG Edges", stats["cfg_edges"])
-                sc3.metric("Loops", stats["loops"])
-                sc4.metric("Dispatcher States", stats["dispatcher_states"])
-                sc5.metric("Unreachable Dead Branches", stats["unreachable_removed"])
+                stats = m15["stats"]
+                sc1, sc2, sc3, sc4 = st.columns(4)
+                sc1.metric("Paths Explored", stats["paths_explored"])
+                sc2.metric("Feasible Branches", stats["feasible_branches"])
+                sc3.metric("Infeasible (Dead) Branches", stats["infeasible_branches"])
+                sc4.metric("Unknown / Timeouts", stats["unknown_branches"])
                 
                 st.markdown("---")
-                col_cff, col_diff = st.columns(2)
+                st.markdown("#### 🔬 Path Conditions & Solver Feasibility Matrix")
+                st.write("Displays the extracted symbolic constraints sent to Z3 for Satisfiability (SAT) checking.")
                 
-                with col_cff:
-                    st.markdown("#### 🗺️ State Transition Graph (STG)")
-                    if not cff["detected"]:
-                        st.success("✅ No Switch-based Control Flow Flattening detected.")
-                    else:
-                        st.error(f"🚨 Dispatcher Detected! State Variable(s): `{', '.join(cff['state_variables'])}`")
-                        st.graphviz_chart(m14["stg_graph"])
-
-                with col_diff:
-                    st.markdown("#### 🗺️ Control Flow Graph (CFG)")
-                    st.graphviz_chart(m14["dot_graph"])
-                        
-                st.markdown("---")
-                st.markdown("#### ✂️ Control Flow Deflattening & Reconstruction Sandbox")
-                st.write("Review safely resolved dispatcher loops. Confirmed linear/static state machines can be reconstructed to their original sequential execution order.")
-                
-                if not cff["reconstruction_queue"]:
-                    st.info("No provably safe deflattening operations queued. Either no flattening exists, or state transitions are dynamic/unresolved.")
+                if not m15["paths"]:
+                    st.success("No conditional paths discovered within the execution bounds.")
                 else:
-                    df_data = []
-                    for i, r in enumerate(cff["reconstruction_queue"]):
-                        df_data.append({
-                            "Apply": True,
-                            "State Var": r["state_var"],
-                            "Type": r["type"],
-                            "Confidence": r["confidence"],
-                            "Reconstructed Source": r["reconstructed_code"],
-                            "_id": i
-                        })
-                        
-                    df = pd.DataFrame(df_data)
-                    edited_df = st.data_editor(
-                        df,
-                        column_config={
-                            "Apply": st.column_config.CheckboxColumn("Apply Deflattening"),
-                            "_id": None # Hide metadata
-                        },
-                        disabled=["State Var", "Type", "Confidence", "Reconstructed Source"],
-                        use_container_width=True
-                    )
+                    df = pd.DataFrame(m15["paths"])
+                    st.dataframe(df, use_container_width=True)
                     
-                    if st.button("🚀 Apply Selected Deflattening", type="primary"):
-                        approved = edited_df[edited_df["Apply"] == True]
-                        if approved.empty:
-                            st.warning("No deflattening operations selected.")
-                        else:
-                            payload = []
-                            for _, row in approved.iterrows():
-                                # Match with original queue
-                                orig_obj = cff["reconstruction_queue"][row["_id"]]
-                                payload.append({
-                                    "apply": True,
-                                    "original_range": orig_obj["original_range"],
-                                    "reconstructed_code": orig_obj["reconstructed_code"],
-                                    "type": orig_obj["type"]
-                                })
-                                
-                            engine = CFGAnalyzer()
-                            # We use the M14 base code captured before M6 applied replacements
-                            new_code = engine.transform(st.session_state.m14_code_base, approved_deflatten=payload)
-                            
-                            processed, status = DeobfuscatorEngine().process(new_code)
-                            if status == "Success":
-                                st.session_state.processed_code = processed
-                                st.session_state.m14_code_base = new_code
-                                st.success(f"Successfully deflattened {len(payload)} control flow dispatchers! View Output in Tab 1.")
-                            else:
-                                st.error("Error formatting code.")
-
-                st.download_button("📄 Download M14 CFG/STG Report (JSON)", json.dumps(m14, indent=4), "cfg_analysis.json", "application/json")
+                    st.download_button("📄 Download M15 Symbolic Constraints Report (JSON)", json.dumps(m15, indent=4), "symexec_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
