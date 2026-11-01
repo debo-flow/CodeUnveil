@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M18)
+# External Engine Imports (M2 - M19)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -25,6 +25,7 @@ from sym_engine import SymEngine
 from project_engine import ProjectAnalyzer
 from similarity_engine import SimilarityEngine
 from semantic_engine import SemanticAnalyzer
+from validation_engine import ValidationEngine
 
 # ==========================================
 # M1 Engine Components
@@ -64,7 +65,7 @@ def initialize_state():
     for key in base_keys:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 19)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 20)] + ['m7_replacements']
     for key in engine_keys:
         if key not in st.session_state: st.session_state[key] = None
 
@@ -76,7 +77,7 @@ def reset_app():
     ]
     for key in base_keys: st.session_state[key] = ""
     
-    engine_keys = [f"m{i}_results" for i in range(1, 19)] + ['m7_replacements']
+    engine_keys = [f"m{i}_results" for i in range(1, 20)] + ['m7_replacements']
     for key in engine_keys: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
@@ -91,7 +92,6 @@ def main():
     with st.sidebar:
         st.header("Actions & Settings")
         uploaded_file = st.file_uploader("Upload Source A (.js/.zip)", type=["js", "txt", "zip"], key=f"uploader_{st.session_state.uploader_key}")
-        
         if uploaded_file is not None:
             if uploaded_file.name.endswith(".zip"):
                 with st.spinner("Analyzing Full ZIP Architecture (M16)..."):
@@ -106,10 +106,6 @@ def main():
             else:
                 st.session_state.input_code = io.StringIO(uploaded_file.getvalue().decode("utf-8", errors="replace")).read()
         
-        upload_b = st.file_uploader("Upload Source B (.js) for Clones", type=["js", "txt"], key="upload_b")
-        if upload_b is not None:
-            st.session_state.m17_target_code = io.StringIO(upload_b.getvalue().decode("utf-8", errors="replace")).read()
-            
         st.markdown("#### Configurable Pipeline")
         apply_dce = st.checkbox("🗑️ Destructive Dead Code Removal (M7)", value=False)
         apply_ast_regen = st.checkbox("🏗️ Strict AST Regeneration (M12)", value=False)
@@ -120,8 +116,8 @@ def main():
             st.rerun()
 
     tabs = st.tabs([
-        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "🔀 M6/14", 
-        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15", "📁 M16", "🧬 M17", "🧠 M18: Semantics"
+        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "🔀 M6/M14", 
+        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13", "🧮 M15", "📁 M16", "🧬 M17", "🧠 M18", "🧪 M19: Validation"
     ])
 
     # ---------------------------
@@ -185,13 +181,12 @@ def main():
                             st.session_state.processed_code = processed
                             st.session_state.m12_results = CodeQualityAnalyzer.analyze(processed)
                             st.session_state.m13_results = SecurityAnalyzer().analyze(processed, st.session_state.m5_results)
-                            
-                            # M17 Auto-Run Clone Detection
-                            if st.session_state.m17_target_code:
-                                st.session_state.m17_results = SimilarityEngine().compare(user_input, st.session_state.m17_target_code)
-                                
-                            # M18 Semantic Analysis
                             st.session_state.m18_results = SemanticAnalyzer().analyze(processed)
+                            
+                            # M19 Automated Differential Analysis
+                            val_engine = ValidationEngine()
+                            st.session_state.m19_results = val_engine.run_differential_analysis(user_input, processed)
+                            st.session_state.m19_tests = val_engine.run_regression_suite()
                         else: 
                             st.error(status)
 
@@ -208,76 +203,62 @@ def main():
         if st.session_state.m2_results: st.json(st.session_state.m2_results.get("ast_tree", {}), expanded=False)
     with tabs[2]:
         if st.session_state.m3_results: st.metric("Extracted Strings", st.session_state.m3_results["stats"]["total_strings"])
-    with tabs[3]:
-        if st.session_state.m4_results is not None:
-            if st.session_state.m4_results: st.dataframe(pd.DataFrame(st.session_state.m4_results).drop(columns=["Full Decoded"]), use_container_width=True)
     with tabs[4]:
         if st.session_state.m5_results: st.write(f"**Severity Level:** {st.session_state.m5_results['severity_level']}")
     with tabs[6]:
         if st.session_state.m7_results and st.session_state.m7_results.get("status") == "success": st.metric("Safely Removable Blocks", st.session_state.m7_results["stats"]["safely_removable"])
 
     # ---------------------------
-    # TAB 17 (M18): Semantic Analysis & Program Understanding
+    # TAB 18 (M19): Automated Testing & Validation Dashboard
     # ---------------------------
-    with tabs[16]:
-        st.subheader("🧠 Advanced Semantic Analysis & Program Understanding Engine")
+    with tabs[17]:
+        st.subheader("🧪 M19: Automated Testing, Differential Analysis & Semantic Validation")
         
-        if not st.session_state.m18_results:
-            st.info("Execute the pipeline in Tab 1 to generate Semantic Analytics.")
+        if not st.session_state.m19_results:
+            st.info("Execute the pipeline in Tab 1 to generate Differential Analytics.")
         else:
-            m18 = st.session_state.m18_results
-            if m18.get("status") == "error":
-                st.error(m18["message"])
+            diff = st.session_state.m19_results.get("ast_diff", {})
+            tests = st.session_state.m19_tests.get("stats", {})
+            
+            st.markdown("#### ⚙️ Automated Testing Overview (Metamorphic & Regression)")
+            tc1, tc2, tc3 = st.columns(3)
+            tc1.metric("Tests Passed", tests.get("PASS", 0))
+            tc2.metric("Tests Failed", tests.get("FAIL", 0))
+            tc3.metric("Warnings", tests.get("WARNING", 0))
+            
+            if st.session_state.m19_tests.get("tests"):
+                st.dataframe(pd.DataFrame(st.session_state.m19_tests["tests"]).drop(columns=["error_info"]), use_container_width=True)
+            
+            st.markdown("---")
+            st.markdown("#### 🌳 Differential AST Analysis")
+            st.write("Identifies nodes structurally altered by the transformation pipeline (Original vs Reconstructed).")
+            ac1, ac2, ac3, ac4 = st.columns(4)
+            ac1.metric("Nodes Preserved", diff.get("preserved", 0))
+            ac2.metric("Nodes Modified", diff.get("modified", 0))
+            ac3.metric("Nodes Added", diff.get("added", 0))
+            ac4.metric("Nodes Removed", diff.get("removed", 0))
+            
+            if diff.get("dangerous_changes"):
+                st.warning("⚠️ Potentially Unsafe Structural Modifications Detected:")
+                for dc in diff["dangerous_changes"]:
+                    st.write(f"- {dc}")
             else:
-                stats = m18["stats"]
+                st.success("✅ No dangerous top-level structure shifts detected.")
                 
-                sc1, sc2, sc3, sc4 = st.columns(4)
-                sc1.metric("Total Symbols Tracked", stats["total_symbols"])
-                sc2.metric("Resolved Data Types", stats["resolved_types"])
-                sc3.metric("Functions Classified", stats["functions_classified"])
-                sc4.metric("Side Effects Detected", stats["side_effects_detected"])
+            st.markdown("---")
+            st.markdown("#### 🧠 Semantic Consistency Validation")
+            sem = st.session_state.m19_results.get("semantic_diff", {})
+            if sem.get("status") == "success":
+                st.metric("Symbols Tracked in Transformed Output", sem.get("symbols_preserved", 0))
+                if sem.get("side_effects_consistent"):
+                    st.success("✅ Transformation Contract Upheld: No new side-effects were unexpectedly introduced by the pipeline.")
                 
-                st.markdown("---")
-                col_tab, col_func = st.columns(2)
-                
-                with col_tab:
-                    st.markdown("#### 📋 Symbol Table & Type Inference")
-                    if m18["symbols"]:
-                        df_sym = pd.DataFrame(m18["symbols"])
-                        st.dataframe(df_sym, use_container_width=True)
-                    else:
-                        st.info("No variable/parameter symbols declared.")
-                        
-                with col_func:
-                    st.markdown("#### 🤖 Function Semantic Summaries")
-                    if m18["functions"]:
-                        funcs = []
-                        for name, data in m18["functions"].items():
-                            funcs.append({
-                                "Name": name,
-                                "Classification": data["classification"],
-                                "Return Type": " | ".join(data["inferred_return_types"]),
-                                "Side Effects?": "Yes" if data["has_side_effects"] else "No"
-                            })
-                        st.dataframe(pd.DataFrame(funcs), use_container_width=True)
-                    else:
-                        st.info("No functions defined.")
-                        
-                st.markdown("---")
-                c_se, c_graph = st.columns(2)
-                with c_se:
-                    st.markdown("#### ⚠️ Global Side-Effect Mutations")
-                    if not m18["side_effects"]:
-                        st.success("No critical side-effects (DOM/Network/Global mutations) detected.")
-                    else:
-                        for effect in m18["side_effects"]:
-                            st.warning(f"- {effect}")
-                            
-                with c_graph:
-                    st.markdown("#### 🔗 Semantic Data Dependency Graph")
-                    st.graphviz_chart(m18["dependency_graph_dot"])
-                    
-                st.download_button("📄 Download M18 Semantic Report (JSON)", json.dumps(m18, indent=4), "semantic_report.json", "application/json")
+                if sem.get("issues"):
+                    for issue in sem["issues"]:
+                        if "DANGER" in issue: st.error(issue)
+                        else: st.warning(issue)
+            
+            st.download_button("📄 Download M19 Validation Report (JSON)", json.dumps(st.session_state.m19_results, indent=4), "validation_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
