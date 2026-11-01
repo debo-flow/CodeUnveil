@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M13)
+# External Engine Imports (M2 - M14)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -52,24 +52,19 @@ class DeobfuscatorEngine:
 # UI Configuration & State Management
 # ==========================================
 def initialize_state():
-    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm12_original_stats']:
+    base_keys = ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 'm12_original_stats']
+    for key in base_keys:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
     
-    engine_keys = [
-        'm1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 
-        'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 
-        'm10_results', 'm11_results', 'm12_results', 'm13_results'
-    ]
+    engine_keys = [f"m{i}_results" for i in range(1, 15)] + ['m7_replacements']
     for key in engine_keys:
         if key not in st.session_state: st.session_state[key] = None
 
 def reset_app():
-    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm12_original_stats']: st.session_state[key] = ""
-    engine_keys = [
-        'm1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 
-        'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 
-        'm10_results', 'm11_results', 'm12_results', 'm13_results'
-    ]
+    base_keys = ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base', 'm14_code_base', 'm12_original_stats']
+    for key in base_keys: st.session_state[key] = ""
+    
+    engine_keys = [f"m{i}_results" for i in range(1, 15)] + ['m7_replacements']
     for key in engine_keys: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
@@ -96,8 +91,8 @@ def main():
             st.rerun()
 
     tabs = st.tabs([
-        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6", 
-        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11", "🏗️ M12", "🛡️ M13: Security"
+        "🚀 Main", "🌳 M2: AST", "🧶 M3: Strings", "🧮 M4: Encodings", "🚨 M5: Obfuscator", "⚖️ Compare", "🔀 M6/M14: CFG", 
+        "🪦 M7: DCE", "🏷️ M8: Renaming", "📦 M9: Arrays", "⚙️ M10: Functions", "✨ M11: Expr", "🏗️ M12: Recon", "🛡️ M13: Security"
     ])
 
     # ---------------------------
@@ -128,10 +123,13 @@ def main():
                         
                         st.session_state.m5_results = DetectionEngine().analyze(user_input, st.session_state.m2_results)
                         
+                        # M6 & M14: CFG & Deflatten Engine
                         cfg_engine = CFGAnalyzer()
+                        st.session_state.m14_code_base = transformed_code # Base for M14 Deflatten interaction
                         st.session_state.m6_results = cfg_engine.analyze(transformed_code)
+                        # We apply M6 simplifications immediately, but hold M14 deflatten for user interaction
                         if st.session_state.m6_results.get("status") == "success":
-                            transformed_code = cfg_engine.transform()
+                            transformed_code = cfg_engine.transform(transformed_code, approved_deflatten=[])
 
                         dce_engine = DCEAnalyzer()
                         st.session_state.m7_results = dce_engine.analyze(transformed_code)
@@ -141,10 +139,13 @@ def main():
 
                         st.session_state.m8_code_base = transformed_code
                         st.session_state.m8_results = RenameAnalyzer().analyze(transformed_code)
+                        
                         st.session_state.m9_code_base = transformed_code
                         st.session_state.m9_results = ArrayAnalyzer().analyze(transformed_code)
+                        
                         st.session_state.m10_code_base = transformed_code
                         st.session_state.m10_results = FunctionAnalyzer().analyze(transformed_code)
+                        
                         st.session_state.m11_code_base = transformed_code
                         st.session_state.m11_results = ExprAnalyzer().analyze(transformed_code)
                             
@@ -157,7 +158,6 @@ def main():
                             st.session_state.processed_code = processed
                             st.session_state.m12_results = CodeQualityAnalyzer.analyze(processed)
                             
-                            # M13 Security Analysis (Run on fully decoded payload)
                             sec_engine = SecurityAnalyzer()
                             st.session_state.m13_results = sec_engine.analyze(processed, st.session_state.m5_results)
                         else: 
@@ -170,7 +170,7 @@ def main():
                 st.download_button("💾 Download Reconstructed JS", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
 
     # ---------------------------
-    # TABS 1-12 Preserved Views (Omitted for brevity visually, logic maintained)
+    # TABS 1-13 Standard Visualizations (Omitted redundant definitions visually, maintained logically)
     # ---------------------------
     with tabs[1]:
         if st.session_state.m2_results: st.json(st.session_state.m2_results.get("ast_tree", {}), expanded=False)
@@ -179,12 +179,9 @@ def main():
     with tabs[3]:
         if st.session_state.m4_results is not None:
             if st.session_state.m4_results: st.dataframe(pd.DataFrame(st.session_state.m4_results).drop(columns=["Full Decoded"]), use_container_width=True)
-            else: st.success("No encodings detected.")
     with tabs[4]:
         if st.session_state.m5_results: st.write(f"**Severity Level:** {st.session_state.m5_results['severity_level']}")
     with tabs[5]: st.write("Target Comparison requires external file.")
-    with tabs[6]:
-        if st.session_state.m6_results and st.session_state.m6_results.get("status") == "success": st.graphviz_chart(st.session_state.m6_results["dot_graph"])
     with tabs[7]:
         if st.session_state.m7_results and st.session_state.m7_results.get("status") == "success": st.metric("Safely Removable Blocks", st.session_state.m7_results["stats"]["safely_removable"])
     with tabs[8]:
@@ -197,68 +194,104 @@ def main():
         if st.session_state.m11_results and st.session_state.m11_results.get("status") == "success": st.metric("Expressions Folded", st.session_state.m11_results["stats"]["constant_folds"])
     with tabs[12]:
         if st.session_state.m12_results: st.metric("Avg Line Length", round(st.session_state.m12_results.get("avg_line_length", 0), 1))
+    with tabs[13]:
+        if st.session_state.m13_results: st.metric("Critical Security Findings", st.session_state.m13_results["summary"].get("Critical", 0))
 
     # ---------------------------
-    # TAB 14 (M13): Security Dashboard & Taint Tracking
+    # TAB 7 (M6/M14): Advanced CFG & Deflattening Engine
     # ---------------------------
-    with tabs[13]:
-        st.subheader("🛡️ Static Security & Malware Analysis Engine")
-        if not st.session_state.m13_results:
-            st.info("Execute the pipeline in Tab 1 to generate Security Analytics.")
+    with tabs[6]:
+        st.subheader("🔀 Advanced Control Flow & Deflattening Engine")
+        if not st.session_state.m6_results:
+            st.info("Execute the pipeline in Tab 1 to generate CFG Analytics.")
         else:
-            m13 = st.session_state.m13_results
-            if m13.get("status") == "error":
-                st.error(m13["message"])
+            m14 = st.session_state.m6_results
+            if m14.get("status") == "error":
+                st.error(m14["message"])
             else:
-                st.markdown("#### 🚨 Vulnerability & Suspicious Pattern Summary")
-                summ = m13["summary"]
+                stats = m14["stats"]
+                cff = m14["cff"]
+                
                 sc1, sc2, sc3, sc4, sc5 = st.columns(5)
-                sc1.metric("🔴 Critical", summ.get("Critical", 0))
-                sc2.metric("🟠 High", summ.get("High", 0))
-                sc3.metric("🟡 Medium", summ.get("Medium", 0))
-                sc4.metric("🔵 Low", summ.get("Low", 0))
-                sc5.metric("⚪ Info", summ.get("Informational", 0))
+                sc1.metric("Basic Blocks", stats["basic_blocks"])
+                sc2.metric("CFG Edges", stats["cfg_edges"])
+                sc3.metric("Loops", stats["loops"])
+                sc4.metric("Dispatcher States", stats["dispatcher_states"])
+                sc5.metric("Unreachable Dead Branches", stats["unreachable_removed"])
                 
                 st.markdown("---")
-                st.markdown("#### 🔎 Findings Dashboard (False Positive Management)")
-                st.write("Review detected security indicators, data flows, and evasive code patterns. Update the 'Status' and 'Notes' columns to track your investigation.")
+                col_cff, col_diff = st.columns(2)
                 
-                if not m13["findings"]:
-                    st.success("✅ No suspicious API usage or malware indicators detected statically.")
+                with col_cff:
+                    st.markdown("#### 🗺️ State Transition Graph (STG)")
+                    if not cff["detected"]:
+                        st.success("✅ No Switch-based Control Flow Flattening detected.")
+                    else:
+                        st.error(f"🚨 Dispatcher Detected! State Variable(s): `{', '.join(cff['state_variables'])}`")
+                        st.graphviz_chart(m14["stg_graph"])
+
+                with col_diff:
+                    st.markdown("#### 🗺️ Control Flow Graph (CFG)")
+                    st.graphviz_chart(m14["dot_graph"])
+                        
+                st.markdown("---")
+                st.markdown("#### ✂️ Control Flow Deflattening & Reconstruction Sandbox")
+                st.write("Review safely resolved dispatcher loops. Confirmed linear/static state machines can be reconstructed to their original sequential execution order.")
+                
+                if not cff["reconstruction_queue"]:
+                    st.info("No provably safe deflattening operations queued. Either no flattening exists, or state transitions are dynamic/unresolved.")
                 else:
-                    df = pd.DataFrame(m13["findings"])
-                    
-                    # Interactive editor for False Positives and Analyst notes
+                    df_data = []
+                    for i, r in enumerate(cff["reconstruction_queue"]):
+                        df_data.append({
+                            "Apply": True,
+                            "State Var": r["state_var"],
+                            "Type": r["type"],
+                            "Confidence": r["confidence"],
+                            "Reconstructed Source": r["reconstructed_code"],
+                            "_id": i
+                        })
+                        
+                    df = pd.DataFrame(df_data)
                     edited_df = st.data_editor(
                         df,
                         column_config={
-                            "status": st.column_config.SelectboxColumn("Status", options=["Open", "Reviewed", "False Positive"], required=True),
-                            "notes": st.column_config.TextColumn("Analyst Notes"),
-                            "snippet": st.column_config.TextColumn("Code Snippet", disabled=True),
-                            "remediation": None, "id": None, "rule_id": None # Hide bulky columns
+                            "Apply": st.column_config.CheckboxColumn("Apply Deflattening"),
+                            "_id": None # Hide metadata
                         },
-                        disabled=["severity", "confidence", "category", "name", "description", "location"],
-                        use_container_width=True,
-                        num_rows="fixed"
+                        disabled=["State Var", "Type", "Confidence", "Reconstructed Source"],
+                        use_container_width=True
                     )
                     
-                    if st.button("💾 Save Review State"):
-                        # Update session state with edits
-                        st.session_state.m13_results["findings"] = edited_df.to_dict('records')
-                        st.success("Review notes and statuses saved.")
-                        
-                    st.markdown("---")
-                    st.markdown("#### 📄 Export Security Reports")
-                    
-                    ec1, ec2, ec3 = st.columns(3)
-                    with ec1:
-                        st.download_button("Download JSON", json.dumps(st.session_state.m13_results, indent=4), "security_report.json", "application/json", use_container_width=True)
-                    with ec2:
-                        csv_data = pd.DataFrame(st.session_state.m13_results["findings"]).to_csv(index=False)
-                        st.download_button("Download CSV", csv_data, "security_report.csv", "text/csv", use_container_width=True)
-                    with ec3:
-                        html_report = SecurityAnalyzer.generate_html_report(st.session_state.m13_results)
-                        st.download_button("Download HTML", html_report, "security_report.html", "text/html", use_container_width=True)
+                    if st.button("🚀 Apply Selected Deflattening", type="primary"):
+                        approved = edited_df[edited_df["Apply"] == True]
+                        if approved.empty:
+                            st.warning("No deflattening operations selected.")
+                        else:
+                            payload = []
+                            for _, row in approved.iterrows():
+                                # Match with original queue
+                                orig_obj = cff["reconstruction_queue"][row["_id"]]
+                                payload.append({
+                                    "apply": True,
+                                    "original_range": orig_obj["original_range"],
+                                    "reconstructed_code": orig_obj["reconstructed_code"],
+                                    "type": orig_obj["type"]
+                                })
+                                
+                            engine = CFGAnalyzer()
+                            # We use the M14 base code captured before M6 applied replacements
+                            new_code = engine.transform(st.session_state.m14_code_base, approved_deflatten=payload)
+                            
+                            processed, status = DeobfuscatorEngine().process(new_code)
+                            if status == "Success":
+                                st.session_state.processed_code = processed
+                                st.session_state.m14_code_base = new_code
+                                st.success(f"Successfully deflattened {len(payload)} control flow dispatchers! View Output in Tab 1.")
+                            else:
+                                st.error("Error formatting code.")
+
+                st.download_button("📄 Download M14 CFG/STG Report (JSON)", json.dumps(m14, indent=4), "cfg_analysis.json", "application/json")
 
 if __name__ == "__main__":
     main()
