@@ -1,6 +1,10 @@
 import pytest
 from ast_engine import ASTAnalyzer
 
+# ==========================================
+# Basic AST Parsing & Structure Tests
+# ==========================================
+
 def test_ast_parsing_basic():
     engine = ASTAnalyzer()
     code = "let x = 10; const y = 20;"
@@ -33,6 +37,10 @@ def test_ast_functions_and_complexity():
     # Base(1) + If(1) + For(1)
     assert result["complexity"]["cyclomatic_complexity"] >= 3
 
+# ==========================================
+# Obfuscation Pattern Tests (M2 & M5)
+# ==========================================
+
 def test_ast_obfuscation_patterns():
     engine = ASTAnalyzer()
     code = """
@@ -48,6 +56,34 @@ def test_ast_obfuscation_patterns():
     assert result["complexity"]["unusual_variable_names"] >= 1
     assert result["complexity"]["computed_property_access"] == 1
 
+def test_ast_m5_cff_detection():
+    engine = ASTAnalyzer()
+    code = "while(true) { switch(val) { case 1: break; } }"
+    result = engine.analyze(code)
+    
+    assert result["status"] == "success"
+    assert result["complexity"]["switch_in_loop"] == 1
+
+def test_ast_m5_debug_protection():
+    engine = ASTAnalyzer()
+    code = "function check() { debugger; }"
+    result = engine.analyze(code)
+    
+    assert result["status"] == "success"
+    assert result["complexity"]["debugger_statements"] == 1
+
+def test_ast_m5_unary_booleans():
+    engine = ASTAnalyzer()
+    code = "var x = !![]; var y = ![];"
+    result = engine.analyze(code)
+    
+    assert result["status"] == "success"
+    assert result["complexity"]["unary_booleans"] == 3 # Two ! on the first, one on the second
+
+# ==========================================
+# Error Handling & Edge Cases
+# ==========================================
+
 def test_ast_error_handling():
     engine = ASTAnalyzer()
     
@@ -58,10 +94,10 @@ def test_ast_error_handling():
     assert "AST Parsing Error" in result["message"]
 
     # 2. Empty Input
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Input code is empty"):
         engine.analyze("")
 
-    # 3. Size limit test
-    with pytest.raises(ValueError):
+    # 3. Size limit test (Memory safety guard)
+    with pytest.raises(ValueError, match="File exceeds 1MB limit"):
         large_code = "var x = 1;" * (1024 * 1024)
         engine.analyze(large_code)
