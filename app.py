@@ -7,7 +7,7 @@ import pandas as pd
 from typing import Dict, Any, Tuple
 
 # ==========================================
-# External Engine Imports (M2 - M10)
+# External Engine Imports (M2 - M11)
 # ==========================================
 from ast_engine import ASTAnalyzer
 from string_engine import StringAnalyzer
@@ -18,6 +18,7 @@ from dce_engine import DCEAnalyzer
 from rename_engine import RenameAnalyzer
 from array_engine import ArrayAnalyzer
 from function_engine import FunctionAnalyzer
+from expr_engine import ExprAnalyzer
 
 # ==========================================
 # M1 Engine Components (Regex & Formatting)
@@ -49,14 +50,14 @@ class DeobfuscatorEngine:
 # UI Configuration & State Management
 # ==========================================
 def initialize_state():
-    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base']:
+    for key in ['uploader_key', 'input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base']:
         if key not in st.session_state: st.session_state[key] = 0 if key == 'uploader_key' else ""
-    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results']:
+    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results', 'm11_results']:
         if key not in st.session_state: st.session_state[key] = None
 
 def reset_app():
-    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base']: st.session_state[key] = ""
-    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results']: st.session_state[key] = None
+    for key in ['input_code', 'processed_code', 'm6_original', 'm8_code_base', 'm9_code_base', 'm10_code_base', 'm11_code_base']: st.session_state[key] = ""
+    for key in ['m1_results', 'm2_results', 'm3_results', 'm4_results', 'm5_results', 'm6_results', 'm7_results', 'm7_replacements', 'm8_results', 'm9_results', 'm10_results', 'm11_results']: st.session_state[key] = None
     st.session_state.uploader_key += 1
 
 def main():
@@ -79,7 +80,10 @@ def main():
             reset_app()
             st.rerun()
 
-    tabs = st.tabs(["🚀 Main", "🌳 M2: AST", "🧶 M3: Strings", "🧮 M4: Encodings", "🚨 M5: Obfuscator", "⚖️ M5: Compare", "🔀 M6: CFG", "🪦 M7: Dead Code", "🏷️ M8: Renaming", "📦 M9: Arrays", "⚙️ M10: Functions"])
+    tabs = st.tabs([
+        "🚀 Main", "🌳 M2", "🧶 M3", "🧮 M4", "🚨 M5", "⚖️ Compare", "🔀 M6", 
+        "🪦 M7", "🏷️ M8", "📦 M9", "⚙️ M10", "✨ M11: Expr"
+    ])
 
     # ---------------------------
     # MAIN PIPELINE EXECUTION
@@ -124,10 +128,13 @@ def main():
                         st.session_state.m9_code_base = transformed_code
                         st.session_state.m9_results = ArrayAnalyzer().analyze(transformed_code)
 
-                        # M10 Function Engine
                         st.session_state.m10_code_base = transformed_code
-                        func_engine = FunctionAnalyzer()
-                        st.session_state.m10_results = func_engine.analyze(transformed_code)
+                        st.session_state.m10_results = FunctionAnalyzer().analyze(transformed_code)
+                        
+                        # M11 Expression Engine
+                        st.session_state.m11_code_base = transformed_code
+                        expr_engine = ExprAnalyzer()
+                        st.session_state.m11_results = expr_engine.analyze(transformed_code)
                             
                         processed, status = DeobfuscatorEngine().process(transformed_code)
                         if status == "Success": st.session_state.processed_code = processed
@@ -140,7 +147,7 @@ def main():
                 st.download_button("💾 Download Processed Code", st.session_state.processed_code, "codeunveil_output.js", "text/javascript", use_container_width=True)
 
     # ---------------------------
-    # TABS 1-9 Preserved UI
+    # TABS 1-10 Preserved UI Views
     # ---------------------------
     with tabs[1]:
         if st.session_state.m2_results: st.json(st.session_state.m2_results.get("ast_tree", {}), expanded=False)
@@ -152,7 +159,7 @@ def main():
             else: st.success("No encodings detected.")
     with tabs[4]:
         if st.session_state.m5_results: st.write(f"**Severity Level:** {st.session_state.m5_results['severity_level']}")
-    with tabs[5]: st.write("Target Comparison requires external file. (Upload via Sidebar for M5).")
+    with tabs[5]: st.write("Target Comparison requires external file.")
     with tabs[6]:
         if st.session_state.m6_results and st.session_state.m6_results.get("status") == "success": st.graphviz_chart(st.session_state.m6_results["dot_graph"])
     with tabs[7]:
@@ -161,104 +168,74 @@ def main():
         if st.session_state.m8_results and st.session_state.m8_results.get("status") == "success": st.metric("Total Identifiers", st.session_state.m8_results["stats"]["total_identifiers"])
     with tabs[9]:
         if st.session_state.m9_results and st.session_state.m9_results.get("status") == "success": st.metric("String Arrays", st.session_state.m9_results["stats"]["total_arrays"])
-
-    # ---------------------------
-    # TAB 11 (M10): Function Analysis & Call Graph
-    # ---------------------------
     with tabs[10]:
-        st.subheader("⚙️ Advanced Function Analysis & Call Graph Engine")
-        if not st.session_state.m10_results:
-            st.info("Execute the pipeline in Tab 1 to generate Function Analytics.")
+        if st.session_state.m10_results and st.session_state.m10_results.get("status") == "success": st.metric("Total Functions", st.session_state.m10_results["stats"]["total_functions"])
+
+    # ---------------------------
+    # TAB 12 (M11): Expression Simplification Engine
+    # ---------------------------
+    with tabs[11]:
+        st.subheader("✨ Advanced Expression Simplification & Constant Folding")
+        if not st.session_state.m11_results:
+            st.info("Execute the pipeline in Tab 1 to generate Expression Analytics.")
         else:
-            m10 = st.session_state.m10_results
-            if m10.get("status") == "error":
-                st.error(m10["message"])
+            m11 = st.session_state.m11_results
+            if m11.get("status") == "error":
+                st.error(m11["message"])
             else:
-                stats = m10["stats"]
+                stats = m11["stats"]
                 sc1, sc2, sc3, sc4 = st.columns(4)
-                sc1.metric("Total Functions", stats["total_functions"])
-                sc2.metric("IIFEs Detected", stats["iifes"])
-                sc3.metric("Arrow Functions", stats["arrow_functions"])
-                sc4.metric("Wrappers Detected", stats["wrappers_detected"])
+                sc1.metric("Expressions Analyzed", stats["total_expressions"])
+                sc2.metric("Constant Folds", stats["constant_folds"])
+                sc3.metric("Constant Propagations", stats["constant_propagations"])
+                sc4.metric("Arithmetic Simplifications", stats["simplifications"])
                 
                 st.markdown("---")
-                c_funcs, c_graph = st.columns([1, 1])
+                st.markdown("#### 🛠️ Interactive Safe Transformation Sandbox")
+                st.write("Review JS-compliant mathematically safe constant folds (e.g., `2 + 3 -> 5`, `true && x -> x`).")
                 
-                with c_funcs:
-                    st.markdown("#### 🔬 Function Classifications")
-                    if not m10["functions"]:
-                        st.info("No functions found in the source code.")
-                    else:
-                        func_data = []
-                        for name, data in m10["functions"].items():
-                            func_data.append({
-                                "Name / ID": name,
-                                "Type": data["type"].replace("Expression", "").replace("Declaration", ""),
-                                "Classification": data["classification"],
-                                "IIFE?": data["is_iife"]
-                            })
-                        st.dataframe(pd.DataFrame(func_data), use_container_width=True)
-
-                with c_graph:
-                    st.markdown("#### 🗺️ Function Call Graph (CFG)")
-                    st.graphviz_chart(m10["call_graph_dot"])
-
-                st.markdown("---")
-                st.markdown("#### ✂️ Safe Wrapper Inlining Sandbox")
-                st.write("Statically resolve and inline redundant Constant-Return or Forwarding Wrappers.")
-                
-                if not m10["simplifications"]:
-                    st.info("No safe wrapper simplification opportunities found.")
+                if not m11["replacements"]:
+                    st.success("No expression optimizations available. Code is well simplified.")
                 else:
                     df_data = []
-                    for l in m10["simplifications"]:
+                    for r in m11["replacements"]:
                         df_data.append({
                             "Apply": True,
-                            "Target": l["target_func"],
-                            "Type": l["type"],
-                            "Original Call": l["original_expression"],
-                            "Inlined Code": l["resolved_value"],
-                            "_range": l["range"],
-                            "_rep_str": l.get("replacement_str")
+                            "Type": r["type"],
+                            "Original Expression": r["original"],
+                            "Simplified Result": r["resolved"],
+                            "_range": r["range"]
                         })
-                        
+                    
                     df = pd.DataFrame(df_data)
                     edited_df = st.data_editor(
                         df,
                         column_config={
                             "Apply": st.column_config.CheckboxColumn("Apply Transform"),
-                            "_range": None, "_rep_str": None # Hide metadata
+                            "_range": None # Hide metadata
                         },
-                        disabled=["Target", "Type", "Original Call", "Inlined Code"],
+                        disabled=["Type", "Original Expression", "Simplified Result"],
                         use_container_width=True
                     )
                     
-                    if st.button("🚀 Apply Wrapper Inlining", type="primary"):
+                    if st.button("🚀 Apply Selected Expression Simplify", type="primary"):
                         approved = edited_df[edited_df["Apply"] == True]
                         if approved.empty:
-                            st.warning("No transformations selected.")
+                            st.warning("No transforms selected.")
                         else:
-                            payload = []
-                            for _, row in approved.iterrows():
-                                payload.append({
-                                    "apply": True,
-                                    "range": row["_range"],
-                                    "resolved_value": row["Inlined Code"],
-                                    "replacement_str": row["_rep_str"]
-                                })
-                                
-                            engine = FunctionAnalyzer()
-                            new_code = engine.transform(st.session_state.m10_code_base, payload)
+                            payload = [{"apply": True, "range": row["_range"], "resolved_value": row["Simplified Result"]} for _, row in approved.iterrows()]
+                            engine = ExprAnalyzer()
+                            new_code = engine.transform(st.session_state.m11_code_base, payload)
                             
                             processed, status = DeobfuscatorEngine().process(new_code)
                             if status == "Success":
                                 st.session_state.processed_code = processed
-                                st.session_state.m10_code_base = new_code
-                                st.success(f"Successfully inlined {len(payload)} wrapper calls. View Output in Tab 1.")
+                                st.session_state.m11_code_base = new_code
+                                st.success(f"Successfully optimized {len(payload)} expressions! View Output in Tab 1.")
                             else:
                                 st.error("Error formatting code.")
 
-                st.download_button("📄 Download M10 Function Report (JSON)", json.dumps(m10, indent=4), "function_report.json", "application/json")
+                st.download_button("📄 Download M11 Expr Report (JSON)", json.dumps(m11, indent=4), "expr_report.json", "application/json")
 
 if __name__ == "__main__":
     main()
