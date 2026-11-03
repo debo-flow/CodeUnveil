@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codeunveil"
-version = "1.0.0"
+version = "2.0.0"
 description = "Reveal the Logic Behind Obfuscated Code. Advanced JS Static Analysis Laboratory."
 readme = "docs/README.md"
 requires-python = ">=3.11"
@@ -32,7 +32,8 @@ dependencies = [
     "psutil>=5.9.0",
     "streamlit-ace>=0.1.1",
     "fastapi>=0.104.0",
-    "uvicorn>=0.23.0"
+    "uvicorn>=0.23.0",
+    "networkx>=3.0"
 ]
 
 [project.optional-dependencies]
@@ -54,7 +55,8 @@ py-modules = [
     "array_engine", "function_engine", "expr_engine", "reconstruct_engine", 
     "security_rules", "security_engine", "sym_engine", "project_engine", 
     "similarity_engine", "semantic_engine", "validation_engine", "workspace_engine", 
-    "perf_engine", "plugin_engine", "api_server", "qa_engine"
+    "perf_engine", "plugin_engine", "api_server", "qa_engine", "orchestrator_v2", 
+    "intelligence_engine", "benchmark_engine"
 ]
 
 [tool.ruff]
